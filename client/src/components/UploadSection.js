@@ -2,6 +2,8 @@ import React, { useState, useRef } from "react";
 import axios from "axios";
 import "./UploadSection.css";
 
+const BASE_URL = (process.env.REACT_APP_API_URL || "").replace(/\/$/, "");
+
 function UploadSection({ mode, setLoading, setError, onResults, clearResults }) {
   const [dragOver, setDragOver] = useState(false);
   const [previews, setPreviews] = useState([]);
@@ -17,7 +19,6 @@ function UploadSection({ mode, setLoading, setError, onResults, clearResults }) 
     setError("");
     setFiles(fileArray);
 
-    // Generate previews
     const previewPromises = fileArray.map((file) => {
       return new Promise((resolve) => {
         const reader = new FileReader();
@@ -50,7 +51,7 @@ function UploadSection({ mode, setLoading, setError, onResults, clearResults }) 
         const formData = new FormData();
         formData.append("card", files[0]);
 
-        const res = await axios.post("/api/extract", formData, {
+        const res = await axios.post(`${BASE_URL}/api/extract`, formData, {
           headers: { "Content-Type": "multipart/form-data" },
         });
 
@@ -61,7 +62,7 @@ function UploadSection({ mode, setLoading, setError, onResults, clearResults }) 
         const formData = new FormData();
         files.forEach((f) => formData.append("cards", f));
 
-        const res = await axios.post("/api/extract-bulk", formData, {
+        const res = await axios.post(`${BASE_URL}/api/extract-bulk`, formData, {
           headers: { "Content-Type": "multipart/form-data" },
         });
 
@@ -85,7 +86,6 @@ function UploadSection({ mode, setLoading, setError, onResults, clearResults }) 
 
   return (
     <div className="upload-section">
-      {/* Drop Zone */}
       <div
         className={`drop-zone ${dragOver ? "drag-over" : ""}`}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -111,7 +111,6 @@ function UploadSection({ mode, setLoading, setError, onResults, clearResults }) 
         />
       </div>
 
-      {/* Previews */}
       {previews.length > 0 && (
         <div className="previews-wrap">
           <div className="previews-grid">
