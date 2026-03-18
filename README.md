@@ -7,7 +7,7 @@ AI-powered visiting card reader using **Google Gemini (FREE)** — upload card i
 - **Backend**: Node.js + Express
 - **AI**: Google Gemini 1.5 Flash (**FREE API**)
 
----
+---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
 
 ## Step 1 — Free Gemini API Key kaise le
 
