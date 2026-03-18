@@ -4,7 +4,7 @@ import "./UploadSection.css";
 
 const BASE_URL = (process.env.REACT_APP_API_URL || "").replace(/\/$/, "");
 
-function UploadSection({ mode, setLoading, setError, onResults, clearResults }) {
+function UploadSection({ mode, setLoading, setError, onResults }) {
   const [dragOver, setDragOver] = useState(false);
   const [previews, setPreviews] = useState([]);
   const [files, setFiles] = useState([]);
@@ -44,7 +44,6 @@ function UploadSection({ mode, setLoading, setError, onResults, clearResults }) 
 
     setLoading(true);
     setError("");
-    clearResults();
 
     try {
       if (mode === "single") {

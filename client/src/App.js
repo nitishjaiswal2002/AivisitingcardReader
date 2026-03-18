@@ -8,13 +8,13 @@ function App() {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [mode, setMode] = useState("single"); // "single" | "bulk"
+  const [mode, setMode] = useState("single");
 
   const handleResults = (data) => {
-    setResults((prev) => [...prev, ...data]);
+    setResults(data);
   };
 
-  const clearResults = () => {
+  const clearAll = () => {
     setResults([]);
     setError("");
   };
@@ -24,17 +24,16 @@ function App() {
       <Header />
 
       <main className="main-content">
-        {/* Mode Toggle */}
         <div className="mode-toggle">
           <button
             className={`mode-btn ${mode === "single" ? "active" : ""}`}
-            onClick={() => { setMode("single"); clearResults(); }}
+            onClick={() => { setMode("single"); clearAll(); }}
           >
             Single Card
           </button>
           <button
             className={`mode-btn ${mode === "bulk" ? "active" : ""}`}
-            onClick={() => { setMode("bulk"); clearResults(); }}
+            onClick={() => { setMode("bulk"); clearAll(); }}
           >
             Bulk Upload
           </button>
@@ -45,7 +44,6 @@ function App() {
           setLoading={setLoading}
           setError={setError}
           onResults={handleResults}
-          clearResults={clearResults}
         />
 
         {error && (
@@ -62,7 +60,7 @@ function App() {
         )}
 
         {results.length > 0 && !loading && (
-          <ResultsTable results={results} onClear={clearResults} />
+          <ResultsTable results={results} onClear={clearAll} />
         )}
       </main>
     </div>
