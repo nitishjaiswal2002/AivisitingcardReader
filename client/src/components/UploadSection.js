@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import axios from "axios";
 import "./UploadSection.css";
 
@@ -8,6 +8,8 @@ function UploadSection({ mode, setLoading, setError, onResults }) {
   const [dragOver, setDragOver] = useState(false);
   const [previews, setPreviews] = useState([]);
   const [files, setFiles] = useState([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const lastClickRef = useRef(0);
   const fileInputRef = useRef();
 
   const handleFiles = (selectedFiles) => {
@@ -36,7 +38,16 @@ function UploadSection({ mode, setLoading, setError, onResults }) {
     handleFiles(e.dataTransfer.files);
   };
 
-  const handleExtract = async () => {
+  const handleExtract = useCallback(async () => {
+    // 10 second debounce — agar 10s ke andar dobara click kiya to ignore
+    const now = Date.now();
+    if (now - lastClickRef.current < 10000) {
+      alert("Please wait 10 seconds before trying again!");
+      return;
+    }
+    if (isProcessing) return;
+    lastClickRef.current = now;
+    setIsProcessing(true);
     if (files.length === 0) {
       setError("Pehle image upload karo");
       return;
@@ -50,12 +61,20 @@ function UploadSection({ mode, setLoading, setError, onResults }) {
         const formData = new FormData();
         formData.append("card", files[0]);
 
+        console.log("Calling:", `${BASE_URL}/api/extract`);
+
         const res = await axios.post(`${BASE_URL}/api/extract`, formData, {
           headers: { "Content-Type": "multipart/form-data" },
         });
 
+        console.log("Response:", res.data);
+
         if (res.data.success) {
-          onResults([{ filename: files[0].name, status: "success", data: res.data.data }]);
+          const resultData = [{ filename: files[0].name, status: "success", data: res.data.data }];
+          console.log("Passing to onResults:", resultData);
+          onResults(resultData);
+        } else {
+          setError("Data extract nahi hua");
         }
       } else {
         const formData = new FormData();
@@ -70,11 +89,13 @@ function UploadSection({ mode, setLoading, setError, onResults }) {
         }
       }
     } catch (err) {
+      console.error("Extract error:", err);
       setError(err.response?.data?.error || "Server se connect nahi ho paya");
     } finally {
       setLoading(false);
+      setIsProcessing(false);
     }
-  };
+  }, [files, mode, setLoading, setError, onResults, isProcessing]);
 
   const removeFile = (index) => {
     const newFiles = files.filter((_, i) => i !== index);
@@ -98,7 +119,7 @@ function UploadSection({ mode, setLoading, setError, onResults }) {
         </p>
         <p className="drop-sub">ya click karke select karo • JPG, PNG, WEBP supported</p>
         <p className="drop-limit">
-          {mode === "single" ? "1 card at a time" : "Max 20 cards at once"}
+          {mode === "single" ? "1 card at a time" : "Max 50 cards at once"}
         </p>
         <input
           ref={fileInputRef}
@@ -127,9 +148,16 @@ function UploadSection({ mode, setLoading, setError, onResults }) {
             ))}
           </div>
 
-          <button className="extract-btn" onClick={handleExtract}>
+          <button
+            className={`extract-btn ${isProcessing ? "processing" : ""}`}
+            onClick={handleExtract}
+            disabled={isProcessing}
+          >
             <span>🤖</span>
-            Extract Details from {previews.length} Card{previews.length > 1 ? "s" : ""}
+            {isProcessing
+              ? "Processing... Please wait"
+              : `Extract Details from ${previews.length} Card${previews.length > 1 ? "s" : ""}`
+            }
           </button>
         </div>
       )}
