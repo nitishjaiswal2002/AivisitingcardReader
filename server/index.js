@@ -9,7 +9,7 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // ─── OpenRouter config ────────────────────────────────────────────────────────
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const OPENROUTER_API_KEY = (process.env.OPENROUTER_API_KEY || "").replace(/\s+/g, "").trim();
 const MODEL = "meta-llama/llama-3.2-11b-vision-instruct:free"; // 100% free
 
 // ─── Multer ───────────────────────────────────────────────────────────────────
