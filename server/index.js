@@ -9,7 +9,7 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const MODEL = "meta-llama/llama-3.2-11b-vision-instruct:free";
+const MODEL = "qwen/qwen2-vl-7b-instruct:free";
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -52,7 +52,7 @@ async function extractFromImage(buffer, mimeType) {
     headers: {
       "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
       "Content-Type": "application/json",
-      "HTTP-Referer": "https://visiting-card-backend.onrender.com",
+      "HTTP-Referer": "https://aivisitingcardreader-1.onrender.com",
       "X-Title": "Visiting Card Extractor",
     },
     body: JSON.stringify({
