@@ -8,11 +8,10 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ─── OpenRouter config ────────────────────────────────────────────────────────
-const OPENROUTER_API_KEY ="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";
-const MODEL = "meta-llama/llama-3.2-11b-vision-instruct:free"; // 100% free
+// ─── Hardcoded key for testing ────────────────────────────────────────────────
+const OPENROUTER_API_KEY = "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";
+const MODEL = "meta-llama/llama-3.2-11b-vision-instruct:free";
 
-// ─── Multer ───────────────────────────────────────────────────────────────────
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
@@ -44,6 +43,26 @@ const PROMPT = `Extract all details from this visiting/business card and return 
   "whatsapp": ""
 }
 Return ONLY the JSON. No explanation, no markdown, no code block.`;
+
+// ─── Test route — key aur OpenRouter verify karo ─────────────────────────────
+app.get("/api/test-key", async (req, res) => {
+  try {
+    const response = await fetch("https://openrouter.ai/api/v1/auth/key", {
+      headers: {
+        "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+      },
+    });
+    const data = await response.json();
+    res.json({
+      keyUsed: OPENROUTER_API_KEY.slice(0, 20) + "...",
+      keyLength: OPENROUTER_API_KEY.length,
+      openRouterResponse: data,
+      status: response.status,
+    });
+  } catch (err) {
+    res.json({ error: err.message });
+  }
+});
 
 // ─── Extract using OpenRouter ─────────────────────────────────────────────────
 async function extractFromImage(buffer, mimeType) {
@@ -102,7 +121,7 @@ app.post("/api/extract", upload.single("card"), async (req, res) => {
   }
 });
 
-// ─── Bulk — parallel ──────────────────────────────────────────────────────────
+// ─── Bulk ─────────────────────────────────────────────────────────────────────
 const BATCH_SIZE = 5;
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -112,26 +131,21 @@ app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
       return res.status(400).json({ error: "Koi image upload nahi hui" });
 
     const files = req.files;
-    console.log(`Bulk: ${files.length} cards`);
     const results = new Array(files.length);
 
     for (let i = 0; i < files.length; i += BATCH_SIZE) {
       const batch = files.slice(i, i + BATCH_SIZE);
-
       await Promise.all(
         batch.map(async (file, j) => {
           const idx = i + j;
           try {
             const data = await extractFromImage(file.buffer, file.mimetype);
             results[idx] = { filename: file.originalname, status: "success", data };
-            console.log(`✓ ${file.originalname}`);
           } catch (err) {
             results[idx] = { filename: file.originalname, status: "error", error: err.message, data: {} };
-            console.log(`✗ ${file.originalname}: ${err.message}`);
           }
         })
       );
-
       if (i + BATCH_SIZE < files.length) await delay(300);
     }
 
@@ -143,9 +157,11 @@ app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
 
 // ─── Health ───────────────────────────────────────────────────────────────────
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", model: MODEL });
+  res.json({ status: "ok", model: MODEL, keyLength: OPENROUTER_API_KEY.length });
 });
 
 app.listen(PORT, () => {
-  console.log(`Server: http://localhost:${PORT} | Model: ${MODEL}`);
+  console.log(`Server: http://localhost:${PORT}`);
+  console.log(`Key length: ${OPENROUTER_API_KEY.length}`);
+  console.log(`Key start: ${OPENROUTER_API_KEY.slice(0, 15)}...`);
 });
