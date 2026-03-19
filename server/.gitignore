@@ -1,2 +1,10 @@
 node_modules/
+server/node_modules/
+client/node_modules/
+server/.env
+client/.env
 .env
+client/build/
+build/
+*.log
+.DS_Store
