@@ -51,8 +51,12 @@ async function extractFromImage(buffer, mimeType, retries = 3) {
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
+
       const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
         method: "POST",
+        signal: controller.signal,
         headers: {
           "Authorization": `Bearer ${MISTRAL_API_KEY}`,
           "Content-Type": "application/json",
@@ -72,11 +76,19 @@ async function extractFromImage(buffer, mimeType, retries = 3) {
         }),
       });
 
+      clearTimeout(timeout);
+
       if (!response.ok) {
         const err = await response.text();
         if (response.status === 429 && attempt < retries) {
           console.log(`Rate limit — waiting 30s... attempt ${attempt}/${retries}`);
           await delay(30000);
+          continue;
+        }
+        // 502/503 — retry karo
+        if ((response.status === 502 || response.status === 503) && attempt < retries) {
+          console.log(`Server error ${response.status} — retry ${attempt}/${retries}`);
+          await delay(5000 * attempt);
           continue;
         }
         throw new Error(`Mistral error: ${response.status} — ${err}`);
