@@ -1,7 +1,6 @@
 import express from "express";
 import cors from "cors";
 import multer from "multer";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -9,13 +8,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ─── Gemini config — 500 req/day free ────────────────────────────────────────
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const MODEL_NAME = "gemini-2.0-flash-lite";
+const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
+const MODEL = "mistral-small-latest"; // Latest Mistral vision model
 
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-
-// ─── Multer ───────────────────────────────────────────────────────────────────
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
@@ -28,7 +23,6 @@ const upload = multer({
 app.use(cors({ origin: "*", methods: ["GET", "POST"], allowedHeaders: ["Content-Type"] }));
 app.use(express.json());
 
-// ─── Prompt ───────────────────────────────────────────────────────────────────
 const PROMPT = `Extract all details from this visiting/business card and return ONLY a valid JSON object with these exact fields (use empty string "" if not found):
 {
   "name": "",
@@ -51,36 +45,60 @@ Return ONLY the JSON. No explanation, no markdown, no code block.`;
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// ─── Extract with retry ───────────────────────────────────────────────────────
 async function extractFromImage(buffer, mimeType, retries = 3) {
+  const base64 = buffer.toString("base64");
+  const dataUrl = `data:${mimeType};base64,${base64}`;
+
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const model = genAI.getGenerativeModel({ model: MODEL_NAME });
-      const result = await model.generateContent([
-        PROMPT,
-        { inlineData: { data: buffer.toString("base64"), mimeType } },
-      ]);
-      const raw = result.response.text().trim();
+      const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${MISTRAL_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          messages: [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: PROMPT },
+                { type: "image_url", image_url: { url: dataUrl } },
+              ],
+            },
+          ],
+          max_tokens: 500,
+        }),
+      });
+
+      if (!response.ok) {
+        const err = await response.text();
+        if (response.status === 429 && attempt < retries) {
+          console.log(`Rate limit — waiting 30s... attempt ${attempt}/${retries}`);
+          await delay(30000);
+          continue;
+        }
+        throw new Error(`Mistral error: ${response.status} — ${err}`);
+      }
+
+      const data = await response.json();
+      const raw = data.choices?.[0]?.message?.content?.trim() || "";
+
       try {
         return JSON.parse(raw);
       } catch {
         const match = raw.match(/\{[\s\S]*\}/);
         if (match) return JSON.parse(match[0]);
-        throw new Error("Parse failed");
+        throw new Error("Parse failed: " + raw.slice(0, 100));
       }
     } catch (err) {
-      const is429 = err.message?.includes("429") || err.message?.includes("quota");
-      if (is429 && attempt < retries) {
-        console.log(`Rate limit — waiting 5s... attempt ${attempt}/${retries}`);
-        await delay(5000 * attempt);
-        continue;
-      }
-      throw err;
+      if (attempt === retries) throw err;
     }
   }
 }
 
-// ─── Single card ──────────────────────────────────────────────────────────────
+// Single card
 app.post("/api/extract", upload.single("card"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "Koi image upload nahi hui" });
@@ -92,8 +110,8 @@ app.post("/api/extract", upload.single("card"), async (req, res) => {
   }
 });
 
-// ─── Bulk — 30 cards parallel (10 per batch) ──────────────────────────────────
-const BATCH_SIZE = 10;
+// Bulk — 5 parallel batches
+const BATCH_SIZE = 5;
 
 app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
   try {
@@ -106,23 +124,20 @@ app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
 
     for (let i = 0; i < files.length; i += BATCH_SIZE) {
       const batch = files.slice(i, i + BATCH_SIZE);
-      console.log(`Batch ${Math.floor(i/BATCH_SIZE)+1}: cards ${i+1}-${Math.min(i+BATCH_SIZE, files.length)}`);
-
       await Promise.all(
         batch.map(async (file, j) => {
           const idx = i + j;
           try {
             const data = await extractFromImage(file.buffer, file.mimetype);
             results[idx] = { filename: file.originalname, status: "success", data };
-            console.log(`  ✓ ${file.originalname}`);
+            console.log(`✓ ${file.originalname}`);
           } catch (err) {
             results[idx] = { filename: file.originalname, status: "error", error: err.message, data: {} };
-            console.log(`  ✗ ${file.originalname}`);
+            console.log(`✗ ${file.originalname}`);
           }
         })
       );
-
-      if (i + BATCH_SIZE < files.length) await delay(2000);
+      if (i + BATCH_SIZE < files.length) await delay(1000);
     }
 
     res.json({ success: true, results });
@@ -131,11 +146,10 @@ app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
   }
 });
 
-// ─── Health ───────────────────────────────────────────────────────────────────
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", model: MODEL_NAME, limit: "500 req/day free" });
+  res.json({ status: "ok", model: MODEL });
 });
 
 app.listen(PORT, () => {
-  console.log(`Server: http://localhost:${PORT} | Model: ${MODEL_NAME}`);
+  console.log(`Server: http://localhost:${PORT} | Model: ${MODEL}`);
 });
