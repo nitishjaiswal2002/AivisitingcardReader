@@ -9,7 +9,7 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // ─── Hardcoded key for testing ────────────────────────────────────────────────
-const OPENROUTER_API_KEY = "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";
+const OPENROUTER_API_KEY = "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";
 const MODEL = "meta-llama/llama-3.2-11b-vision-instruct:free";
 
 const upload = multer({
