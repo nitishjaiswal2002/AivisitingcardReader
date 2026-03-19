@@ -8,8 +8,7 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// ─── Hardcoded key for testing ────────────────────────────────────────────────
-const OPENROUTER_API_KEY = "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";
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const MODEL = "meta-llama/llama-3.2-11b-vision-instruct:free";
 
 const upload = multer({
@@ -44,27 +43,6 @@ const PROMPT = `Extract all details from this visiting/business card and return 
 }
 Return ONLY the JSON. No explanation, no markdown, no code block.`;
 
-// ─── Test route — key aur OpenRouter verify karo ─────────────────────────────
-app.get("/api/test-key", async (req, res) => {
-  try {
-    const response = await fetch("https://openrouter.ai/api/v1/auth/key", {
-      headers: {
-        "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-      },
-    });
-    const data = await response.json();
-    res.json({
-      keyUsed: OPENROUTER_API_KEY.slice(0, 20) + "...",
-      keyLength: OPENROUTER_API_KEY.length,
-      openRouterResponse: data,
-      status: response.status,
-    });
-  } catch (err) {
-    res.json({ error: err.message });
-  }
-});
-
-// ─── Extract using OpenRouter ─────────────────────────────────────────────────
 async function extractFromImage(buffer, mimeType) {
   const base64 = buffer.toString("base64");
   const dataUrl = `data:${mimeType};base64,${base64}`;
@@ -74,7 +52,7 @@ async function extractFromImage(buffer, mimeType) {
     headers: {
       "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
       "Content-Type": "application/json",
-      "HTTP-Referer": "https://visiting-card-extractor.onrender.com",
+      "HTTP-Referer": "https://visiting-card-backend.onrender.com",
       "X-Title": "Visiting Card Extractor",
     },
     body: JSON.stringify({
@@ -109,7 +87,6 @@ async function extractFromImage(buffer, mimeType) {
   }
 }
 
-// ─── Single card ──────────────────────────────────────────────────────────────
 app.post("/api/extract", upload.single("card"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "Koi image upload nahi hui" });
@@ -121,7 +98,6 @@ app.post("/api/extract", upload.single("card"), async (req, res) => {
   }
 });
 
-// ─── Bulk ─────────────────────────────────────────────────────────────────────
 const BATCH_SIZE = 5;
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -155,13 +131,10 @@ app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
   }
 });
 
-// ─── Health ───────────────────────────────────────────────────────────────────
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", model: MODEL, keyLength: OPENROUTER_API_KEY.length });
+  res.json({ status: "ok", model: MODEL });
 });
 
 app.listen(PORT, () => {
-  console.log(`Server: http://localhost:${PORT}`);
-  console.log(`Key length: ${OPENROUTER_API_KEY.length}`);
-  console.log(`Key start: ${OPENROUTER_API_KEY.slice(0, 15)}...`);
+  console.log(`Server: http://localhost:${PORT} | Model: ${MODEL}`);
 });
