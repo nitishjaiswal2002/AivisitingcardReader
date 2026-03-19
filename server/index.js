@@ -111,7 +111,7 @@ app.post("/api/extract", upload.single("card"), async (req, res) => {
 });
 
 // Bulk — 5 parallel batches
-const BATCH_SIZE = 5;
+const BATCH_SIZE = 2; // Mistral free = 2 req/min
 
 app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
   try {
@@ -137,7 +137,7 @@ app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
           }
         })
       );
-      if (i + BATCH_SIZE < files.length) await delay(1000);
+      if (i + BATCH_SIZE < files.length) await delay(31000); // 31s = safe for 2 req/min
     }
 
     res.json({ success: true, results });
