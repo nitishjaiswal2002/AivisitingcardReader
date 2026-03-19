@@ -9,7 +9,7 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-const MODEL = "qwen/qwen2.5-vl-72b-instruct:free";
+const MODEL = "openrouter/free";
 
 const upload = multer({
   storage: multer.memoryStorage(),
