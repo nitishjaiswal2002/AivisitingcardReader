@@ -4,26 +4,67 @@ import "./UploadSection.css";
 
 const BASE_URL = (process.env.REACT_APP_API_URL || "").replace(/\/$/, "");
 
+// Image compress karo before upload
+const compressImage = (file) => {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const MAX = 1200;
+        let { width, height } = img;
+        if (width > MAX || height > MAX) {
+          if (width > height) {
+            height = Math.round((height * MAX) / width);
+            width = MAX;
+          } else {
+            width = Math.round((width * MAX) / height);
+            height = MAX;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => resolve(new File([blob], file.name, { type: "image/jpeg" })),
+          "image/jpeg",
+          0.85
+        );
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+};
+
 function UploadSection({ mode, language, setLoading, setError, onResults }) {
   const [dragOver, setDragOver] = useState(false);
   const [previews, setPreviews] = useState([]);
   const [files, setFiles] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [countdown, setCountdown] = useState(0);
+  const [compressing, setCompressing] = useState(false);
   const lastClickRef = useRef(0);
   const intervalRef = useRef(null);
   const fileInputRef = useRef();
 
-  const handleFiles = (selectedFiles) => {
+  const handleFiles = async (selectedFiles) => {
     const fileArray = Array.from(selectedFiles);
     if (mode === "single" && fileArray.length > 1) {
       setError("Single mode mein ek hi card upload karo");
       return;
     }
     setError("");
-    setFiles(fileArray);
+    setCompressing(true);
 
-    const previewPromises = fileArray.map((file) => {
+    // Compress all images
+    const compressed = await Promise.all(fileArray.map(compressImage));
+    setFiles(compressed);
+    setCompressing(false);
+
+    const previewPromises = compressed.map((file) => {
       return new Promise((resolve) => {
         const reader = new FileReader();
         reader.onload = (e) => resolve({ name: file.name, src: e.target.result });
@@ -134,11 +175,15 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
-        onClick={() => fileInputRef.current.click()}
+        onClick={() => !compressing && fileInputRef.current.click()}
       >
-        <div className="drop-icon">📤</div>
+        <div className="drop-icon">{compressing ? "⏳" : "📤"}</div>
         <p className="drop-title">
-          {dragOver ? "Chhod do yahan!" : "Visiting card ki image drag karo"}
+          {compressing
+            ? "Optimizing images..."
+            : dragOver
+            ? "Chhod do yahan!"
+            : "Visiting card ki image drag karo"}
         </p>
         <p className="drop-sub">ya click karke select karo • JPG, PNG, WEBP supported</p>
         <p className="drop-limit">
@@ -180,7 +225,7 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
           <button
             className={`extract-btn ${isProcessing ? "processing" : ""}`}
             onClick={handleExtract}
-            disabled={isProcessing}
+            disabled={isProcessing || compressing}
           >
             {!isProcessing && <span>🤖</span>}
             {isProcessing
