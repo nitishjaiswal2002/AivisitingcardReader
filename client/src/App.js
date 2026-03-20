@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import UploadSection from "./components/UploadSection";
 import ResultsTable from "./components/ResultsTable";
 import Header from "./components/Header";
+import Footer from "./components/Footer";
 import "./App.css";
 
 function App() {
@@ -97,6 +98,7 @@ function App() {
           <ResultsTable results={results} onClear={clearAll} />
         )}
       </main>
+      <Footer/>
     </div>
   );
 }
