@@ -9,7 +9,9 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
   const [previews, setPreviews] = useState([]);
   const [files, setFiles] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [countdown, setCountdown] = useState(0);
   const lastClickRef = useRef(0);
+  const intervalRef = useRef(null);
   const fileInputRef = useRef();
 
   const handleFiles = (selectedFiles) => {
@@ -40,13 +42,30 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
 
   const handleExtract = useCallback(async () => {
     const now = Date.now();
-    if (now - lastClickRef.current < 10000) {
-      alert("Please wait 10 seconds before trying again!");
+
+    if (now - lastClickRef.current < 60000) {
+      const remaining = Math.ceil((60000 - (now - lastClickRef.current)) / 1000);
+      setCountdown(remaining);
+
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      intervalRef.current = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(intervalRef.current);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
       return;
     }
+
     if (isProcessing) return;
     lastClickRef.current = now;
+    setCountdown(0);
+    if (intervalRef.current) clearInterval(intervalRef.current);
     setIsProcessing(true);
+
     if (files.length === 0) {
       setError("Pehle image upload karo");
       return;
@@ -67,7 +86,6 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
 
         if (res.data.success) {
           if (res.data.multiple) {
-            // ek image mein multiple cards detect hue
             onResults(res.data.results);
           } else {
             onResults([{ filename: files[0].name, status: "success", data: res.data.data }]);
@@ -90,7 +108,12 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
       }
     } catch (err) {
       console.error("Extract error:", err);
-      setError(err.response?.data?.error || "Server se connect nahi ho paya");
+      const msg = err.response?.data?.error || "";
+      if (msg.includes("429") || msg.includes("rate_limited")) {
+        setError("⏳ Server busy hai, 1 minute baad dobara try karo");
+      } else {
+        setError(msg || "Server se connect nahi ho paya");
+      }
     } finally {
       setLoading(false);
       setIsProcessing(false);
@@ -148,14 +171,20 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
             ))}
           </div>
 
+          {countdown > 0 && (
+            <div className="wait-msg">
+              ⏳ Please wait <strong>{countdown}s</strong> before trying again
+            </div>
+          )}
+
           <button
             className={`extract-btn ${isProcessing ? "processing" : ""}`}
             onClick={handleExtract}
             disabled={isProcessing}
           >
-            <span>🤖</span>
+            {!isProcessing && <span>🤖</span>}
             {isProcessing
-              ? "Processing... Please wait"
+              ? "🤖 AI is reading your card..."
               : `Extract Details from ${previews.length} Card${previews.length > 1 ? "s" : ""}`
             }
           </button>
