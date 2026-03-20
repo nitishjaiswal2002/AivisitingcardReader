@@ -13,11 +13,19 @@ const FIELDS = [
   { key: "city", label: "City" },
   { key: "state", label: "State" },
   { key: "country", label: "Country" },
+  { key: "products", label: "Products" },
   { key: "linkedin", label: "LinkedIn" },
   { key: "twitter", label: "Twitter" },
   { key: "instagram", label: "Instagram" },
   { key: "whatsapp", label: "WhatsApp" },
 ];
+
+// val ko safely string mein convert karo
+const safeVal = (val) => {
+  if (val === null || val === undefined || val === "") return "";
+  if (typeof val === "object") return JSON.stringify(val);
+  return String(val);
+};
 
 function downloadCSV(results) {
   const headers = ["Filename", ...FIELDS.map((f) => f.label)];
@@ -25,7 +33,7 @@ function downloadCSV(results) {
   const rows = results.map((r) => {
     const row = [r.filename || ""];
     FIELDS.forEach((f) => {
-      const val = (r.data?.[f.key] || "").replace(/"/g, '""');
+      const val = safeVal(r.data?.[f.key]).replace(/"/g, '""');
       row.push(`"${val}"`);
     });
     return row.join(",");
@@ -87,7 +95,7 @@ function ResultsTable({ results, onClear }) {
       ) : (
         <div className="details-grid">
           {FIELDS.map((f) => {
-            const val = current?.data?.[f.key];
+            const val = safeVal(current?.data?.[f.key]);
             return (
               <div key={f.key} className={`detail-row ${!val ? "empty" : ""}`}>
                 <div className="detail-label">{f.label}</div>

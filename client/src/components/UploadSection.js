@@ -4,7 +4,7 @@ import "./UploadSection.css";
 
 const BASE_URL = (process.env.REACT_APP_API_URL || "").replace(/\/$/, "");
 
-function UploadSection({ mode, setLoading, setError, onResults }) {
+function UploadSection({ mode, language, setLoading, setError, onResults }) {
   const [dragOver, setDragOver] = useState(false);
   const [previews, setPreviews] = useState([]);
   const [files, setFiles] = useState([]);
@@ -39,7 +39,6 @@ function UploadSection({ mode, setLoading, setError, onResults }) {
   };
 
   const handleExtract = useCallback(async () => {
-    // 10 second debounce — agar 10s ke andar dobara click kiya to ignore
     const now = Date.now();
     if (now - lastClickRef.current < 10000) {
       alert("Please wait 10 seconds before trying again!");
@@ -60,25 +59,26 @@ function UploadSection({ mode, setLoading, setError, onResults }) {
       if (mode === "single") {
         const formData = new FormData();
         formData.append("card", files[0]);
-
-        console.log("Calling:", `${BASE_URL}/api/extract`);
+        formData.append("language", language);
 
         const res = await axios.post(`${BASE_URL}/api/extract`, formData, {
           headers: { "Content-Type": "multipart/form-data" },
         });
 
-        console.log("Response:", res.data);
-
         if (res.data.success) {
-          const resultData = [{ filename: files[0].name, status: "success", data: res.data.data }];
-          console.log("Passing to onResults:", resultData);
-          onResults(resultData);
+          if (res.data.multiple) {
+            // ek image mein multiple cards detect hue
+            onResults(res.data.results);
+          } else {
+            onResults([{ filename: files[0].name, status: "success", data: res.data.data }]);
+          }
         } else {
           setError("Data extract nahi hua");
         }
       } else {
         const formData = new FormData();
         files.forEach((f) => formData.append("cards", f));
+        formData.append("language", language);
 
         const res = await axios.post(`${BASE_URL}/api/extract-bulk`, formData, {
           headers: { "Content-Type": "multipart/form-data" },
@@ -95,7 +95,7 @@ function UploadSection({ mode, setLoading, setError, onResults }) {
       setLoading(false);
       setIsProcessing(false);
     }
-  }, [files, mode, setLoading, setError, onResults, isProcessing]);
+  }, [files, mode, language, setLoading, setError, onResults, isProcessing]);
 
   const removeFile = (index) => {
     const newFiles = files.filter((_, i) => i !== index);

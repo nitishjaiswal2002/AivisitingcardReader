@@ -9,10 +9,9 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [mode, setMode] = useState("single");
+  const [language, setLanguage] = useState("auto");
 
-  const handleResults = (data) => {
-    setResults(data);
-  };
+  const handleResults = (data) => setResults(data);
 
   const clearAll = () => {
     setResults([]);
@@ -24,6 +23,9 @@ function App() {
       <Header />
 
       <main className="main-content">
+        {/* Mode Toggle */}
+        <div className="lang-toggle-wrap">
+        <span className="lang-label">Card Type:</span>
         <div className="mode-toggle">
           <button
             className={`mode-btn ${mode === "single" ? "active" : ""}`}
@@ -38,9 +40,37 @@ function App() {
             Bulk Upload
           </button>
         </div>
+       </div>
+
+
+        {/* Language Toggle */}
+        <div className="lang-toggle-wrap">
+          <span className="lang-label">Card Language:</span>
+          <div className="lang-toggle">
+            <button
+              className={`lang-btn ${language === "auto" ? "active" : ""}`}
+              onClick={() => setLanguage("auto")}
+            >
+              🌐 Auto Detect
+            </button>
+            <button
+              className={`lang-btn ${language === "english" ? "active" : ""}`}
+              onClick={() => setLanguage("english")}
+            >
+               English
+            </button>
+            <button
+              className={`lang-btn ${language === "hindi" ? "active" : ""}`}
+              onClick={() => setLanguage("hindi")}
+            >
+               Hindi
+            </button>
+          </div>
+        </div>
 
         <UploadSection
           mode={mode}
+          language={language}
           setLoading={setLoading}
           setError={setError}
           onResults={handleResults}
@@ -55,7 +85,11 @@ function App() {
         {loading && (
           <div className="loading-box">
             <div className="spinner" />
-            <span>AI is reading your visiting card...</span>
+            <span>
+              {language === "hindi"
+                ? "AI आपका हिंदी कार्ड पढ़ रहा है..."
+                : "AI is reading your visiting card..."}
+            </span>
           </div>
         )}
 
