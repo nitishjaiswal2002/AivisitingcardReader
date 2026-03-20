@@ -4,7 +4,6 @@ import "./UploadSection.css";
 
 const BASE_URL = (process.env.REACT_APP_API_URL || "").replace(/\/$/, "");
 
-// Image compress karo before upload
 const compressImage = (file) => {
   return new Promise((resolve) => {
     const reader = new FileReader();
@@ -49,6 +48,7 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
   const lastClickRef = useRef(0);
   const intervalRef = useRef(null);
   const fileInputRef = useRef();
+  const cameraInputRef = useRef(); // ← camera ref
 
   const handleFiles = async (selectedFiles) => {
     const fileArray = Array.from(selectedFiles);
@@ -58,8 +58,6 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
     }
     setError("");
     setCompressing(true);
-
-    // Compress all images
     const compressed = await Promise.all(fileArray.map(compressImage));
     setFiles(compressed);
     setCompressing(false);
@@ -175,7 +173,7 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
-        onClick={() => !compressing && fileInputRef.current.click()}
+        onClick={() => !compressing && mode === "bulk" && fileInputRef.current.click()}
       >
         <div className="drop-icon">{compressing ? "⏳" : "📤"}</div>
         <p className="drop-title">
@@ -183,22 +181,57 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
             ? "Optimizing images..."
             : dragOver
             ? "Chhod do yahan!"
-            : "Visiting card ki image drag karo"}
+            : mode === "single"
+            ? "Neeche se Gallery ya Camera choose karo"
+            : "Visiting cards drag karo ya click karo"}
         </p>
-        <p className="drop-sub">ya click karke select karo • JPG, PNG, WEBP supported</p>
+        <p className="drop-sub">JPG, PNG, WEBP supported</p>
         <p className="drop-limit">
           {mode === "single" ? "1 card at a time" : "Max 50 cards at once"}
         </p>
+
+        {/* Gallery input — no capture */}
         <input
           ref={fileInputRef}
           type="file"
           accept="image/*"
           multiple={mode === "bulk"}
-           capture={mode === "single" ? "environment" : undefined}
+          style={{ display: "none" }}
+          onChange={(e) => handleFiles(e.target.files)}
+        />
+
+        {/* Camera input — capture only */}
+        <input
+          ref={cameraInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
           style={{ display: "none" }}
           onChange={(e) => handleFiles(e.target.files)}
         />
       </div>
+
+      {/* Single mode — Gallery + Camera buttons */}
+      {mode === "single" && !compressing && (
+        <div className="upload-btns">
+          <button
+            className="upload-opt-btn"
+            onClick={() => fileInputRef.current.click()}
+          >
+            🖼️ Gallery
+          </button>
+          <button
+            className="upload-opt-btn"
+            onClick={() => cameraInputRef.current.click()}
+          >
+            📷 Camera
+          </button>
+        </div>
+      )}
+
+      {compressing && (
+        <div className="compressing-msg">⏳ Optimizing images...</div>
+      )}
 
       {previews.length > 0 && (
         <div className="previews-wrap">
