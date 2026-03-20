@@ -4,11 +4,16 @@ import "./Header.css";
 function Header() {
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const scrollTo = (id) => {
+
+const scrollTo = (id) => {
+  setMenuOpen(false);
+  setTimeout(() => {
     const el = document.getElementById(id);
-    if (el) el.scrollIntoView({ behavior: "smooth" });
-    setMenuOpen(false);
-  };
+    if (!el) return;
+    const y = el.offsetTop - 20;
+    window.scrollTo({ top: y, behavior: "smooth" });
+  }, 150);
+};
 
   return (
     <header className="header">

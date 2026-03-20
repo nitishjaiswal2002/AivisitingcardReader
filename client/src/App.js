@@ -3,6 +3,8 @@ import UploadSection from "./components/UploadSection";
 import ResultsTable from "./components/ResultsTable";
 import Header from "./components/Header";
 import Footer from "./components/Footer";
+import HowItWorks from "./components/HowItWorks";
+import Testimonials from "./components/Testimonials";
 import "./App.css";
 
 function App() {
@@ -24,81 +26,102 @@ function App() {
       <Header />
 
       <main className="main-content">
-        {/* Mode Toggle */}
-        <div className="lang-toggle-wrap">
-        <span className="lang-label">Card Type:</span>
-        <div className="mode-toggle">
-          <button
-            className={`mode-btn ${mode === "single" ? "active" : ""}`}
-            onClick={() => { setMode("single"); clearAll(); }}
-          >
-            Single Card
-          </button>
-          <button
-            className={`mode-btn ${mode === "bulk" ? "active" : ""}`}
-            onClick={() => { setMode("bulk"); clearAll(); }}
-          >
-            Bulk Upload
-          </button>
-        </div>
-       </div>
 
-
-        {/* Language Toggle */}
-        <div className="lang-toggle-wrap">
-          <span className="lang-label">Card Language:</span>
-          <div className="lang-toggle">
-            <button
-              className={`lang-btn ${language === "auto" ? "active" : ""}`}
-              onClick={() => setLanguage("auto")}
-            >
-              🌐 Auto Detect
-            </button>
-            <button
-              className={`lang-btn ${language === "english" ? "active" : ""}`}
-              onClick={() => setLanguage("english")}
-            >
-               English
-            </button>
-            <button
-              className={`lang-btn ${language === "hindi" ? "active" : ""}`}
-              onClick={() => setLanguage("hindi")}
-            >
-               Hindi
-            </button>
-          </div>
+        {/* How it Works */}
+        <div id="how-it-works">
+          <HowItWorks />
         </div>
 
-        <UploadSection
-          mode={mode}
-          language={language}
-          setLoading={setLoading}
-          setError={setError}
-          onResults={handleResults}
-        />
+        {/* Upload Tool */}
+        <div id="upload" className="upload-box">
 
-        {error && (
-          <div className="error-box">
-            <span>⚠️</span> {error}
+          <div className="toggles-wrap">
+            {/* Mode Toggle */}
+            <div className="lang-toggle-wrap">
+              <span className="lang-label">Card Type:</span>
+              <div className="mode-toggle">
+                <button
+                  className={`mode-btn ${mode === "single" ? "active" : ""}`}
+                  onClick={() => { setMode("single"); clearAll(); }}
+                >
+                  Single Card
+                </button>
+                <button
+                  className={`mode-btn ${mode === "bulk" ? "active" : ""}`}
+                  onClick={() => { setMode("bulk"); clearAll(); }}
+                >
+                  Bulk Upload
+                </button>
+              </div>
+            </div>
+
+            {/* Language Toggle */}
+            <div className="lang-toggle-wrap">
+              <span className="lang-label">Card Language:</span>
+              <div className="lang-toggle">
+                <button
+                  className={`lang-btn ${language === "auto" ? "active" : ""}`}
+                  onClick={() => setLanguage("auto")}
+                >
+                  🌐 Auto Detect
+                </button>
+                <button
+                  className={`lang-btn ${language === "english" ? "active" : ""}`}
+                  onClick={() => setLanguage("english")}
+                >
+                  English
+                </button>
+                <button
+                  className={`lang-btn ${language === "hindi" ? "active" : ""}`}
+                  onClick={() => setLanguage("hindi")}
+                >
+                  Hindi
+                </button>
+              </div>
+            </div>
           </div>
-        )}
 
-        {loading && (
-          <div className="loading-box">
-            <div className="spinner" />
-            <span>
-              {language === "hindi"
-                ? "AI आपका हिंदी कार्ड पढ़ रहा है..."
-                : "AI is reading your visiting card..."}
-            </span>
-          </div>
-        )}
+          <UploadSection
+            mode={mode}
+            language={language}
+            setLoading={setLoading}
+            setError={setError}
+            onResults={handleResults}
+          />
 
-        {results.length > 0 && !loading && (
-          <ResultsTable results={results} onClear={clearAll} />
-        )}
+          {error && (
+            <div className="error-box">
+              <span>⚠️</span> {error}
+            </div>
+          )}
+
+          {loading && (
+            <div className="loading-box">
+              <div className="spinner" />
+              <span>
+                {language === "hindi"
+                  ? "AI आपका हिंदी कार्ड पढ़ रहा है..."
+                  : "AI is reading your visiting card..."}
+              </span>
+            </div>
+          )}
+
+          {results.length > 0 && !loading && (
+            <ResultsTable results={results} onClear={clearAll} />
+          )}
+        </div>
+
+        {/* Testimonials */}
+        <div id="testimonials">
+          <Testimonials />
+        </div>
+
+        {/* FAQ placeholder */}
+        <div id="faq" />
+
       </main>
-      <Footer/>
+
+      <Footer />
     </div>
   );
 }

@@ -3,9 +3,6 @@
   color: white;
   padding: 16px 0 0;
   box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
-  position: sticky;
-  top: 0;
-  z-index: 100;
 }
 
 .header-inner {
