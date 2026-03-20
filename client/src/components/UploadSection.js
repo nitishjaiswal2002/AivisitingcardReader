@@ -194,6 +194,7 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
           type="file"
           accept="image/*"
           multiple={mode === "bulk"}
+           capture={mode === "single" ? "environment" : undefined}
           style={{ display: "none" }}
           onChange={(e) => handleFiles(e.target.files)}
         />
