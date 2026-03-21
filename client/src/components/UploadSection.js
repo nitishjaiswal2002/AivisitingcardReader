@@ -11,7 +11,7 @@ const compressImage = (file) => {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        const MAX = 800; // mobile ke liye smaller
+        const MAX = 600; // mobile ke liye smaller
         let { width, height } = img;
         if (width > MAX || height > MAX) {
           if (width > height) {
@@ -29,7 +29,7 @@ const compressImage = (file) => {
         canvas.toBlob(
           (blob) => resolve(new File([blob], file.name, { type: "image/jpeg" })),
           "image/jpeg",
-          0.75 // mobile ke liye lower quality
+          0.65 // mobile ke liye lower quality
         );
       };
       img.src = e.target.result;
