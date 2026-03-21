@@ -48,7 +48,7 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
   const lastClickRef = useRef(0);
   const intervalRef = useRef(null);
   const fileInputRef = useRef();
-  const cameraInputRef = useRef(); // ← camera ref
+  const cameraInputRef = useRef();
 
   const handleFiles = async (selectedFiles) => {
     const fileArray = Array.from(selectedFiles);
@@ -173,7 +173,11 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
-        onClick={() => !compressing && mode === "bulk" && fileInputRef.current.click()}
+        onClick={() => {
+          if (compressing) return;
+          const isDesktop = window.innerWidth >= 769;
+          if (isDesktop || mode === "bulk") fileInputRef.current.click();
+        }}
       >
         <div className="drop-icon">{compressing ? "⏳" : "📤"}</div>
         <p className="drop-title">
@@ -182,7 +186,7 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
             : dragOver
             ? "Chhod do yahan!"
             : mode === "single"
-            ? "Neeche se Gallery ya Camera choose karo"
+            ? "Visiting card ki image upload karo"
             : "Visiting cards drag karo ya click karo"}
         </p>
         <p className="drop-sub">JPG, PNG, WEBP supported</p>
@@ -190,7 +194,6 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
           {mode === "single" ? "1 card at a time" : "Max 50 cards at once"}
         </p>
 
-        {/* Gallery input — no capture */}
         <input
           ref={fileInputRef}
           type="file"
@@ -199,8 +202,6 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
           style={{ display: "none" }}
           onChange={(e) => handleFiles(e.target.files)}
         />
-
-        {/* Camera input — capture only */}
         <input
           ref={cameraInputRef}
           type="file"
@@ -211,7 +212,7 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
         />
       </div>
 
-      {/* Single mode — Gallery + Camera buttons */}
+      {/* Mobile only — single mode mein Gallery + Camera buttons */}
       {mode === "single" && !compressing && (
         <div className="upload-btns">
           <button
