@@ -11,7 +11,7 @@ const compressImage = (file) => {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        const MAX = 1200;
+        const MAX = 800; // mobile ke liye smaller
         let { width, height } = img;
         if (width > MAX || height > MAX) {
           if (width > height) {
@@ -29,7 +29,7 @@ const compressImage = (file) => {
         canvas.toBlob(
           (blob) => resolve(new File([blob], file.name, { type: "image/jpeg" })),
           "image/jpeg",
-          0.85
+          0.75 // mobile ke liye lower quality
         );
       };
       img.src = e.target.result;
@@ -121,6 +121,7 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
 
         const res = await axios.post(`${BASE_URL}/api/extract`, formData, {
           headers: { "Content-Type": "multipart/form-data" },
+          timeout: 120000, // 2 min
         });
 
         if (res.data.success) {
@@ -139,6 +140,7 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
 
         const res = await axios.post(`${BASE_URL}/api/extract-bulk`, formData, {
           headers: { "Content-Type": "multipart/form-data" },
+          timeout: 300000, // 5 min bulk ke liye
         });
 
         if (res.data.success) {
@@ -147,9 +149,11 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
       }
     } catch (err) {
       console.error("Extract error:", err);
-      const msg = err.response?.data?.error || "";
-      if (msg.includes("429") || msg.includes("rate_limited")) {
-        setError("⏳ Server busy hai, 1 minute baad dobara try karo");
+      const msg = err.response?.data?.error || err.message || "";
+      if (msg.includes("429") || msg.includes("rate_limited") || msg.includes("Rate limit")) {
+        setError("⏳ Abhi bahut requests aa rahi hain — 1 minute baad dobara try karo");
+      } else if (msg.includes("timeout") || msg.includes("ECONNABORTED")) {
+        setError("⏳ Request timeout — dobara try karo");
       } else {
         setError(msg || "Server se connect nahi ho paya");
       }
