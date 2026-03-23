@@ -11,9 +11,9 @@ const PORT = process.env.PORT || 5000;
 const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
 
 const MODELS = {
-  english: "mistral-small-3.1-latest",
+  english: "mistral-small-3.1-2503",
   hindi: "pixtral-12b-2409",
-  auto: "",
+  auto: "mistral-small-3.1-2503",
 };
 
 const PROMPTS = {
