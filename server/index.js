@@ -10,7 +10,7 @@ const PORT = process.env.PORT || 5000;
 
 const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
 const OCR_MODEL = "mistral-ocr-latest";
-const EXTRACT_MODEL = "mistral-medium-latest"; // best available vision model
+const EXTRACT_MODEL = "mistral-medium-latest";
 
 const PROMPTS = {
   english: `You are the world's best business card data extraction specialist.
@@ -260,7 +260,7 @@ if (RENDER_URL) {
   }, 10 * 60 * 1000);
 }
 
-// Step 1: OCR — image se accurate text nikalo
+// Step 1: OCR
 async function ocrImage(buffer, mimeType, retries = 3) {
   const base64 = buffer.toString("base64");
 
@@ -377,6 +377,41 @@ async function extractFromImage(buffer, mimeType, language = "auto") {
 
   const parsed = await extractFromOCR(ocrText, language);
 
+  // Email — sirf domain fix karo, username bilkul as-is
+  const cleanEmail = (val) => {
+    if (!val || typeof val !== "string") return val;
+    if (!val.includes("@")) return val;
+
+    const atIndex = val.lastIndexOf("@");
+    const username = val.substring(0, atIndex);
+    const domain = val.substring(atIndex + 1).toLowerCase();
+
+    const domainFixes = {
+      "grnail.com": "gmail.com",
+      "gmial.com": "gmail.com",
+      "gmai.com": "gmail.com",
+      "gmaii.com": "gmail.com",
+      "yarnoo.com": "yahoo.com",
+      "yahooo.com": "yahoo.com",
+      "yaho.com": "yahoo.com",
+      "yah00.com": "yahoo.com",
+      "hotrnail.com": "hotmail.com",
+      "hotmai.com": "hotmail.com",
+      "rediffrnail.com": "rediffmail.com",
+      "redifmail.com": "rediffmail.com",
+      "outlOOk.com": "outlook.com",
+      "outl0ok.com": "outlook.com",
+      "outIook.com": "outlook.com",
+      "icloud.corn": "icloud.com",
+      "gmail.corn": "gmail.com",
+      "yahoo.corn": "yahoo.com",
+      "hotmail.corn": "hotmail.com",
+    };
+
+    const fixedDomain = domainFixes[domain] || domain;
+    return `${username}@${fixedDomain}`;
+  };
+
   // Phone number clean karo
   const cleanPhone = (val) => {
     if (!val || typeof val !== "string") return val;
@@ -390,6 +425,7 @@ async function extractFromImage(buffer, mimeType, language = "auto") {
     if (!obj || typeof obj !== "object") return obj;
     return {
       ...obj,
+      email: cleanEmail(obj.email),
       phone: cleanPhone(obj.phone),
       mobile: cleanPhone(obj.mobile),
       whatsapp: cleanPhone(obj.whatsapp),
