@@ -10,57 +10,19 @@ const PORT = process.env.PORT || 5000;
 
 const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
 
-const MODELS = {
-  english: "mistral-small-3.1-2503",
-  hindi: "pixtral-12b-2409",
-  auto: "mistral-small-3.1-2503",
-};
+// OCR model for all languages — dedicated OCR
+const OCR_MODEL = "mistral-ocr-latest";
+// Fallback vision model for JSON extraction
+const VISION_MODEL = "mistral-small-latest";
 
 const PROMPTS = {
-  english: `You are an expert OCR system specialized in reading business cards.
-Extract ALL details from this business card image with 100% accuracy.
+  english: `You are an expert at extracting business card information.
+Given the OCR text from a business card, extract all details and return ONLY a valid JSON object.
 
 CRITICAL RULES:
-- Read EVERY character carefully — especially phone numbers and email addresses
-- Phone/Mobile: extract EXACT digits — do not add or remove any digit
-- Email: look for @ symbol — copy exactly as written
-- Address: read full address including building, street, area, city, pincode
-- If a field has multiple values (e.g. two phone numbers) put them comma separated
-- If image has ONE card → return a single JSON object
-- If image has MULTIPLE cards → return a JSON array of objects, one per card
-- Return ONLY JSON. No explanation, no markdown, no code block.
-- Use "" if a field is not found
-
-Each object must have these exact fields:
-{
-  "name": "",
-  "designation": "",
-  "company": "",
-  "email": "",
-  "phone": "",
-  "mobile": "",
-  "website": "",
-  "address": "",
-  "city": "",
-  "state": "",
-  "country": "",
-  "products": "",
-  "linkedin": "",
-  "twitter": "",
-  "instagram": "",
-  "whatsapp": ""
-}`,
-
-  hindi: `You are an expert OCR system specialized in reading Hindi and English business cards.
-Extract ALL details from this business card image with 100% accuracy.
-
-CRITICAL RULES:
-- Card is in Hindi (Devanagari script) — read every character carefully
-- Transliterate Hindi names to English (e.g. "राहुल शर्मा" → "Rahul Sharma")
-- Translate Hindi designations/company to English (e.g. "प्रबंधक" → "Manager")
-- Phone/Mobile: extract EXACT digits — do not add or remove any digit
-- Email: look for @ symbol — copy exactly as written
-- Address: read full address including building, street, area, city, pincode
+- Extract EXACT phone numbers — do not change any digit
+- Extract EXACT email addresses — copy character by character
+- Extract full address including building, street, area, city, pincode
 - If a field has multiple values put them comma separated
 - If image has ONE card → return a single JSON object
 - If image has MULTIPLE cards → return a JSON array of objects, one per card
@@ -87,15 +49,50 @@ Each object must have these exact fields:
   "whatsapp": ""
 }`,
 
-  auto: `You are an expert OCR system specialized in reading business cards.
-Extract ALL details from this business card image with 100% accuracy.
+  hindi: `You are an expert at extracting business card information from Hindi and English text.
+Given the OCR text from a business card, extract all details and return ONLY a valid JSON object.
+
+CRITICAL RULES:
+- Card may be in Hindi (Devanagari) or English or mixed
+- Transliterate Hindi names to English (e.g. "राहुल शर्मा" → "Rahul Sharma")
+- Translate Hindi designations/company to English (e.g. "प्रबंधक" → "Manager")
+- Extract EXACT phone numbers — do not change any digit
+- Extract EXACT email addresses — copy character by character
+- Extract full address including building, street, area, city, pincode
+- If a field has multiple values put them comma separated
+- If image has ONE card → return a single JSON object
+- If image has MULTIPLE cards → return a JSON array of objects, one per card
+- Return ONLY JSON. No explanation, no markdown, no code block.
+- Use "" if a field is not found
+
+Each object must have these exact fields:
+{
+  "name": "",
+  "designation": "",
+  "company": "",
+  "email": "",
+  "phone": "",
+  "mobile": "",
+  "website": "",
+  "address": "",
+  "city": "",
+  "state": "",
+  "country": "",
+  "products": "",
+  "linkedin": "",
+  "twitter": "",
+  "instagram": "",
+  "whatsapp": ""
+}`,
+
+  auto: `You are an expert at extracting business card information.
+Given the OCR text from a business card, extract all details and return ONLY a valid JSON object.
 Card may be in English, Hindi (Devanagari), or a mix of both.
 
 CRITICAL RULES:
-- Read EVERY character carefully — especially phone numbers and email addresses
-- Phone/Mobile: extract EXACT digits — do not add or remove any digit
-- Email: look for @ symbol — copy exactly as written
-- Address: read full address including building, street, area, city, pincode
+- Extract EXACT phone numbers — do not change any digit
+- Extract EXACT email addresses — copy character by character
+- Extract full address including building, street, area, city, pincode
 - If Hindi text found, transliterate names and translate designations to English
 - If a field has multiple values put them comma separated
 - If image has ONE card → return a single JSON object
@@ -127,7 +124,7 @@ Each object must have these exact fields:
 const BATCH_CONFIG = {
   english: { batchSize: 5, batchDelay: 2000 },
   auto: { batchSize: 5, batchDelay: 2000 },
-  hindi: { batchSize: 1, batchDelay: 35000 },
+  hindi: { batchSize: 3, batchDelay: 5000 },
 };
 
 const upload = multer({
@@ -154,16 +151,64 @@ if (RENDER_URL) {
   }, 10 * 60 * 1000);
 }
 
-async function extractFromImage(buffer, mimeType, language = "auto", retries = 5) {
+// Step 1: OCR — image se text nikalo
+async function ocrImage(buffer, mimeType, retries = 3) {
   const base64 = buffer.toString("base64");
-  const dataUrl = `data:${mimeType};base64,${base64}`;
-  const model = MODELS[language] || MODELS.auto;
-  const prompt = PROMPTS[language] || PROMPTS.auto;
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 120000);
+
+      const response = await fetch("https://api.mistral.ai/v1/ocr", {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "Authorization": `Bearer ${MISTRAL_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: OCR_MODEL,
+          document: {
+            type: "image_url",
+            image_url: `data:${mimeType};base64,${base64}`,
+          },
+        }),
+      });
+
+      clearTimeout(timeout);
+
+      if (!response.ok) {
+        const err = await response.text();
+        if (response.status === 429 && attempt < retries) {
+          await delay(attempt * 15000);
+          continue;
+        }
+        throw new Error(`OCR error: ${response.status} — ${err}`);
+      }
+
+      const data = await response.json();
+      // OCR response mein pages array hota hai
+      const text = data.pages?.map(p => p.markdown || p.text || "").join("\n") || "";
+      return text;
+    } catch (err) {
+      if (err.name === "AbortError") {
+        if (attempt < retries) { await delay(3000); continue; }
+        throw new Error("OCR timeout");
+      }
+      if (attempt === retries) throw err;
+    }
+  }
+}
+
+// Step 2: Extract JSON from OCR text
+async function extractFromOCR(ocrText, language = "auto", retries = 3) {
+  const prompt = PROMPTS[language] || PROMPTS.auto;
+
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 60000);
 
       const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
         method: "POST",
@@ -173,14 +218,11 @@ async function extractFromImage(buffer, mimeType, language = "auto", retries = 5
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model,
+          model: VISION_MODEL,
           messages: [
             {
               role: "user",
-              content: [
-                { type: "text", text: prompt },
-                { type: "image_url", image_url: { url: dataUrl } },
-              ],
+              content: `${prompt}\n\nOCR Text from business card:\n${ocrText}`,
             },
           ],
           max_tokens: 1200,
@@ -192,28 +234,17 @@ async function extractFromImage(buffer, mimeType, language = "auto", retries = 5
       if (!response.ok) {
         const err = await response.text();
         if (response.status === 429 && attempt < retries) {
-          const waitTime = attempt * 15000;
-          console.log(`Rate limit — waiting ${waitTime / 1000}s... attempt ${attempt}/${retries}`);
-          await delay(waitTime);
+          await delay(attempt * 15000);
           continue;
         }
-        if (response.status === 429) {
-          throw new Error("Rate limit exceeded. Please wait 1 minute and try again.");
-        }
-        if ((response.status === 502 || response.status === 503) && attempt < retries) {
-          console.log(`Server error ${response.status} — retry ${attempt}/${retries}`);
-          await delay(5000 * attempt);
-          continue;
-        }
-        throw new Error(`Mistral error: ${response.status} — ${err}`);
+        throw new Error(`Extract error: ${response.status} — ${err}`);
       }
 
       const data = await response.json();
       const raw = data.choices?.[0]?.message?.content?.trim() || "";
 
       try {
-        const parsed = JSON.parse(raw);
-        return parsed;
+        return JSON.parse(raw);
       } catch {
         const arrMatch = raw.match(/\[[\s\S]*\]/);
         if (arrMatch) return JSON.parse(arrMatch[0]);
@@ -223,16 +254,23 @@ async function extractFromImage(buffer, mimeType, language = "auto", retries = 5
       }
     } catch (err) {
       if (err.name === "AbortError") {
-        if (attempt < retries) {
-          console.log(`Timeout — retry ${attempt}/${retries}`);
-          await delay(3000);
-          continue;
-        }
-        throw new Error("Request timeout — please try again");
+        if (attempt < retries) { await delay(3000); continue; }
+        throw new Error("Extract timeout");
       }
       if (attempt === retries) throw err;
     }
   }
+}
+
+// Main function — OCR + Extract
+async function extractFromImage(buffer, mimeType, language = "auto") {
+  // Step 1: OCR se text nikalo
+  const ocrText = await ocrImage(buffer, mimeType);
+  console.log("OCR Text:", ocrText.slice(0, 200));
+
+  // Step 2: Text se JSON nikalo
+  const parsed = await extractFromOCR(ocrText, language);
+  return parsed;
 }
 
 // Single card
@@ -322,7 +360,7 @@ app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
 });
 
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", models: MODELS });
+  res.json({ status: "ok", model: OCR_MODEL });
 });
 
 app.listen(PORT, () => {
