@@ -169,7 +169,7 @@ async function extractFromImage(buffer, mimeType, language = "auto", retries = 5
         const err = await response.text();
         if (response.status === 429 && attempt < retries) {
           const waitTime = attempt * 15000;
-          console.log(`Rate limit — waiting ${waitTime/1000}s... attempt ${attempt}/${retries}`);
+          console.log(`Rate limit — waiting ${waitTime / 1000}s... attempt ${attempt}/${retries}`);
           await delay(waitTime);
           continue;
         }
@@ -234,7 +234,7 @@ app.post("/api/extract", upload.single("card"), async (req, res) => {
   }
 });
 
-// Bulk — fetch streaming ke saath
+// Bulk — race condition fix + streaming
 app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0)
@@ -246,45 +246,53 @@ app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
 
     console.log(`Bulk: ${files.length} cards | Language: ${language} | Batch: ${batchSize}`);
 
-    // Streaming headers
     res.setHeader("Content-Type", "application/json");
     res.setHeader("Transfer-Encoding", "chunked");
     res.setHeader("X-Accel-Buffering", "no");
 
-    const results = [];
+    const results = new Array(files.length); // ← fixed size — order maintain hoga
 
     for (let i = 0; i < files.length; i += batchSize) {
       const batch = files.slice(i, i + batchSize);
       await Promise.all(
-        batch.map(async (file) => {
+        batch.map(async (file, j) => {
+          const idx = i + j; // ← exact index
           try {
             const parsed = await extractFromImage(file.buffer, file.mimetype, language);
             if (Array.isArray(parsed)) {
-              parsed.forEach((data, j) => {
-                results.push({
-                  filename: `${file.originalname} — Card ${j + 1}`,
-                  status: "success",
-                  data,
-                });
-              });
+              results[idx] = parsed.map((data, k) => ({
+                filename: `${file.originalname} — Card ${k + 1}`,
+                status: "success",
+                data,
+              }));
             } else {
-              results.push({ filename: file.originalname, status: "success", data: parsed });
+              results[idx] = [{
+                filename: file.originalname,
+                status: "success",
+                data: parsed,
+              }];
             }
             console.log(`✓ ${file.originalname}`);
           } catch (err) {
-            results.push({ filename: file.originalname, status: "error", error: err.message, data: {} });
+            results[idx] = [{
+              filename: file.originalname,
+              status: "error",
+              error: err.message,
+              data: {},
+            }];
             console.log(`✗ ${file.originalname}`);
           }
         })
       );
 
-      // Keep connection alive
-      res.write(" ");
+      res.write(" "); // keep alive
 
       if (i + batchSize < files.length) await delay(batchDelay);
     }
 
-    res.end(JSON.stringify({ success: true, results }));
+    const flatResults = results.flat(); // nested arrays flat karo
+
+    res.end(JSON.stringify({ success: true, results: flatResults }));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
