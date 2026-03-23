@@ -9,27 +9,54 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
-
-// OCR model for all languages — dedicated OCR
 const OCR_MODEL = "mistral-ocr-latest";
-// Fallback vision model for JSON extraction
-const VISION_MODEL = "mistral-small-latest";
+const EXTRACT_MODEL = "mistral-medium-latest"; // best available vision model
 
 const PROMPTS = {
-  english: `You are an expert at extracting business card information.
-Given the OCR text from a business card, extract all details and return ONLY a valid JSON object.
+  english: `You are the world's best business card OCR and data extraction specialist.
+Your job is to extract 100% accurate information from business card OCR text.
 
-CRITICAL RULES:
-- Extract EXACT phone numbers — do not change any digit
-- Extract EXACT email addresses — copy character by character
-- Extract full address including building, street, area, city, pincode
-- If a field has multiple values put them comma separated
-- If image has ONE card → return a single JSON object
-- If image has MULTIPLE cards → return a JSON array of objects, one per card
-- Return ONLY JSON. No explanation, no markdown, no code block.
-- Use "" if a field is not found
+STRICT CHARACTER CORRECTION RULES — Apply these ALWAYS:
+1. EMAIL addresses:
+   - 'l' (lowercase L) and 'I' (uppercase i) and '1' (one) — use context to pick correct one
+   - 'rn' together often looks like 'm' — e.g. "grnail" → "gmail", "yarnoo" → "yahoo"
+   - '0' (zero) vs 'O' (letter) — emails use letters, not zeros in domain names
+   - Common domains: gmail.com, yahoo.com, hotmail.com, outlook.com, rediffmail.com
+   - Always fix obvious OCR errors in email domains using above knowledge
+   - '@' symbol must be present — if missing, look for 'a' surrounded by words
 
-Each object must have these exact fields:
+2. PHONE / MOBILE numbers:
+   - Contains ONLY digits 0-9, +, -, (, ), space
+   - Remove any letters that crept in (e.g. 'O' → '0', 'l' → '1', 'I' → '1')
+   - Indian numbers: 10 digits, may start with +91 or 0
+   - If two numbers present, put in phone and mobile separately
+
+3. NAMES:
+   - Proper case — first letter capital (e.g. "RAHUL SHARMA" → "Rahul Sharma")
+   - 'rn' → 'm' fix (e.g. "Arnit" might be "Amit")
+   - Remove extra spaces
+
+4. COMPANY names:
+   - Keep original casing if mixed case
+   - Fix obvious OCR errors using context
+
+5. WEBSITE:
+   - Usually starts with www. or http
+   - Fix common errors: 'cornpany' → 'company', 'vvww' → 'www'
+
+6. ADDRESS:
+   - Extract complete address — building, street, area, city, state, pincode
+   - Indian pincodes are 6 digits
+   - Put city in city field, state in state field separately
+
+7. GENERAL:
+   - If a field has multiple values, comma separate them
+   - If image has ONE card → return a single JSON object
+   - If image has MULTIPLE cards → return a JSON array of objects, one per card
+   - Return ONLY JSON. No explanation, no markdown, no code blocks.
+   - Use "" if field not found
+
+Return ONLY this JSON structure:
 {
   "name": "",
   "designation": "",
@@ -49,23 +76,48 @@ Each object must have these exact fields:
   "whatsapp": ""
 }`,
 
-  hindi: `You are an expert at extracting business card information from Hindi and English text.
-Given the OCR text from a business card, extract all details and return ONLY a valid JSON object.
+  hindi: `You are the world's best business card OCR and data extraction specialist for Hindi and English cards.
+Your job is to extract 100% accurate information from business card OCR text.
 
-CRITICAL RULES:
-- Card may be in Hindi (Devanagari) or English or mixed
+HINDI SPECIFIC RULES:
+- Card may be in Hindi (Devanagari), English, or mixed
 - Transliterate Hindi names to English (e.g. "राहुल शर्मा" → "Rahul Sharma")
-- Translate Hindi designations/company to English (e.g. "प्रबंधक" → "Manager")
-- Extract EXACT phone numbers — do not change any digit
-- Extract EXACT email addresses — copy character by character
-- Extract full address including building, street, area, city, pincode
-- If a field has multiple values put them comma separated
-- If image has ONE card → return a single JSON object
-- If image has MULTIPLE cards → return a JSON array of objects, one per card
-- Return ONLY JSON. No explanation, no markdown, no code block.
-- Use "" if a field is not found
+- Translate Hindi designations to English (e.g. "प्रबंधक" → "Manager", "मालिक" → "Owner", "निदेशक" → "Director")
+- Translate Hindi company types (e.g. "प्राइवेट लिमिटेड" → "Pvt Ltd")
+- Translate Hindi city/state names to English (e.g. "मुंबई" → "Mumbai")
 
-Each object must have these exact fields:
+STRICT CHARACTER CORRECTION RULES — Apply these ALWAYS:
+1. EMAIL addresses:
+   - 'l' (lowercase L) and 'I' (uppercase i) and '1' (one) — use context to pick correct one
+   - 'rn' together often looks like 'm' — e.g. "grnail" → "gmail", "yarnoo" → "yahoo"
+   - '0' (zero) vs 'O' (letter) — emails use letters not zeros in domain names
+   - Common domains: gmail.com, yahoo.com, hotmail.com, outlook.com, rediffmail.com
+   - Always fix obvious OCR errors in email domains
+   - '@' symbol must be present
+
+2. PHONE / MOBILE numbers:
+   - Contains ONLY digits 0-9, +, -, (, ), space
+   - Remove any letters (e.g. 'O' → '0', 'l' → '1', 'I' → '1')
+   - Indian numbers: 10 digits, may start with +91 or 0
+   - If two numbers present, put in phone and mobile separately
+
+3. NAMES:
+   - Proper case after transliteration
+   - Fix 'rn' → 'm' confusion
+
+4. ADDRESS:
+   - Extract complete address
+   - Put city in city field, state in state field separately
+   - Indian pincodes are 6 digits
+
+5. GENERAL:
+   - If a field has multiple values, comma separate them
+   - If image has ONE card → return a single JSON object
+   - If image has MULTIPLE cards → return a JSON array of objects, one per card
+   - Return ONLY JSON. No explanation, no markdown, no code blocks.
+   - Use "" if field not found
+
+Return ONLY this JSON structure:
 {
   "name": "",
   "designation": "",
@@ -85,22 +137,64 @@ Each object must have these exact fields:
   "whatsapp": ""
 }`,
 
-  auto: `You are an expert at extracting business card information.
-Given the OCR text from a business card, extract all details and return ONLY a valid JSON object.
+  auto: `You are the world's best business card OCR and data extraction specialist.
+Your job is to extract 100% accurate information from business card OCR text.
 Card may be in English, Hindi (Devanagari), or a mix of both.
 
-CRITICAL RULES:
-- Extract EXACT phone numbers — do not change any digit
-- Extract EXACT email addresses — copy character by character
-- Extract full address including building, street, area, city, pincode
-- If Hindi text found, transliterate names and translate designations to English
-- If a field has multiple values put them comma separated
-- If image has ONE card → return a single JSON object
-- If image has MULTIPLE cards → return a JSON array of objects, one per card
-- Return ONLY JSON. No explanation, no markdown, no code block.
-- Use "" if a field is not found
+HINDI HANDLING:
+- Transliterate Hindi names to English (e.g. "राहुल शर्मा" → "Rahul Sharma")
+- Translate Hindi designations to English (e.g. "प्रबंधक" → "Manager", "मालिक" → "Owner")
+- Translate Hindi city/state to English (e.g. "मुंबई" → "Mumbai", "दिल्ली" → "Delhi")
 
-Each object must have these exact fields:
+STRICT CHARACTER CORRECTION RULES — Apply these ALWAYS:
+1. EMAIL addresses:
+   - 'l' (lowercase L) and 'I' (uppercase i) and '1' (one) — use context to pick correct one
+   - 'rn' together often looks like 'm' — e.g. "grnail" → "gmail", "yarnoo" → "yahoo"
+   - '0' (zero) vs 'O' (letter) — emails use letters not zeros in domain names
+   - Common Indian email domains: gmail.com, yahoo.com, yahoo.co.in, hotmail.com, outlook.com, rediffmail.com
+   - Always fix obvious OCR errors in email domains using domain knowledge
+   - '@' symbol must be present — if missing look for context clue
+
+2. PHONE / MOBILE numbers:
+   - Contains ONLY digits 0-9, +, -, (, ), space — remove any letters
+   - 'O' → '0', 'l' → '1', 'I' → '1', 'S' → '5', 'B' → '8'
+   - Indian mobile: exactly 10 digits, may have +91 prefix
+   - Landline: may have STD code like (022), (011)
+   - If two numbers found, put first in phone, second in mobile
+
+3. NAMES:
+   - Proper case — "JOHN DOE" → "John Doe"
+   - Fix 'rn' → 'm' where obvious
+   - Remove stray punctuation
+
+4. COMPANY names:
+   - Keep original formatting
+   - Fix 'cornpany' → 'company', 'lirnited' → 'limited', 'Pvt' stays 'Pvt'
+
+5. WEBSITE:
+   - Fix 'vvww' → 'www', 'cornpany' → 'company'
+   - Keep http:// or www. prefix
+
+6. ADDRESS:
+   - Extract COMPLETE address — door number, building, street, area, city, state, pincode
+   - Split city into city field and state into state field
+   - Country default "India" if not mentioned and address looks Indian
+   - Indian pincodes are exactly 6 digits
+
+7. SOCIAL MEDIA:
+   - LinkedIn: extract profile URL or username
+   - Twitter/X: extract handle with or without @
+   - Instagram: extract handle
+   - WhatsApp: extract number same as mobile format
+
+8. GENERAL:
+   - Multiple values → comma separated
+   - If image has ONE card → return single JSON object
+   - If image has MULTIPLE cards → return JSON array, one object per card
+   - Return ONLY JSON. No explanation, no markdown, no code blocks.
+   - Use "" if field not found
+
+Return ONLY this JSON structure:
 {
   "name": "",
   "designation": "",
@@ -151,7 +245,7 @@ if (RENDER_URL) {
   }, 10 * 60 * 1000);
 }
 
-// Step 1: OCR — image se text nikalo
+// Step 1: OCR — image se accurate text nikalo
 async function ocrImage(buffer, mimeType, retries = 3) {
   const base64 = buffer.toString("base64");
 
@@ -188,7 +282,6 @@ async function ocrImage(buffer, mimeType, retries = 3) {
       }
 
       const data = await response.json();
-      // OCR response mein pages array hota hai
       const text = data.pages?.map(p => p.markdown || p.text || "").join("\n") || "";
       return text;
     } catch (err) {
@@ -201,7 +294,7 @@ async function ocrImage(buffer, mimeType, retries = 3) {
   }
 }
 
-// Step 2: Extract JSON from OCR text
+// Step 2: OCR text se JSON extract karo
 async function extractFromOCR(ocrText, language = "auto", retries = 3) {
   const prompt = PROMPTS[language] || PROMPTS.auto;
 
@@ -218,7 +311,7 @@ async function extractFromOCR(ocrText, language = "auto", retries = 3) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: VISION_MODEL,
+          model: EXTRACT_MODEL,
           messages: [
             {
               role: "user",
@@ -262,15 +355,34 @@ async function extractFromOCR(ocrText, language = "auto", retries = 3) {
   }
 }
 
-// Main function — OCR + Extract
+// Main — OCR + Extract + Clean
 async function extractFromImage(buffer, mimeType, language = "auto") {
-  // Step 1: OCR se text nikalo
   const ocrText = await ocrImage(buffer, mimeType);
   console.log("OCR Text:", ocrText.slice(0, 200));
 
-  // Step 2: Text se JSON nikalo
   const parsed = await extractFromOCR(ocrText, language);
-  return parsed;
+
+  // Phone number clean karo
+  const cleanPhone = (val) => {
+    if (!val || typeof val !== "string") return val;
+    return val
+      .replace(/[OoIlSB]/g, (c) => ({ O: "0", o: "0", I: "1", l: "1", S: "5", B: "8" }[c] || c))
+      .replace(/[^0-9+\-() ]/g, "")
+      .trim();
+  };
+
+  const cleanResult = (obj) => {
+    if (!obj || typeof obj !== "object") return obj;
+    return {
+      ...obj,
+      phone: cleanPhone(obj.phone),
+      mobile: cleanPhone(obj.mobile),
+      whatsapp: cleanPhone(obj.whatsapp),
+    };
+  };
+
+  if (Array.isArray(parsed)) return parsed.map(cleanResult);
+  return cleanResult(parsed);
 }
 
 // Single card
