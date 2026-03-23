@@ -13,7 +13,7 @@ const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
 const MODELS = {
   english: "mistral-small-latest",
   hindi: "pixtral-12b-2409",
-  auto: "pixtral-12b-2409",
+  auto: "mistral-small-latest",
 };
 
 const PROMPTS = {
@@ -71,7 +71,7 @@ IMPORTANT:
   "whatsapp": ""
 }`,
 
-  auto: `Extract all details from this visiting/business card (may be English, Hindi, or mixed).
+  auto: `Extract all details from this visiting/business card (English, Hindi, or mixed).
 IMPORTANT:
 - If image has ONE card → return a single JSON object
 - If image has MULTIPLE cards → return a JSON array of objects, one per card
@@ -100,6 +100,12 @@ IMPORTANT:
 }`,
 };
 
+const BATCH_CONFIG = {
+  english: { batchSize: 5, batchDelay: 2000 },
+  auto: { batchSize: 5, batchDelay: 2000 },
+  hindi: { batchSize: 1, batchDelay: 35000 },
+};
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
@@ -114,7 +120,17 @@ app.use(express.json());
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function extractFromImage(buffer, mimeType, language = "auto", retries = 3) {
+// Keep alive
+const RENDER_URL = process.env.RENDER_EXTERNAL_URL;
+if (RENDER_URL) {
+  setInterval(() => {
+    fetch(`${RENDER_URL}/api/health`)
+      .then(() => console.log("Keep alive ping sent"))
+      .catch(() => {});
+  }, 10 * 60 * 1000);
+}
+
+async function extractFromImage(buffer, mimeType, language = "auto", retries = 5) {
   const base64 = buffer.toString("base64");
   const dataUrl = `data:${mimeType};base64,${base64}`;
   const model = MODELS[language] || MODELS.auto;
@@ -123,7 +139,7 @@ async function extractFromImage(buffer, mimeType, language = "auto", retries = 3
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 60000);
+      const timeout = setTimeout(() => controller.abort(), 120000);
 
       const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
         method: "POST",
@@ -152,9 +168,13 @@ async function extractFromImage(buffer, mimeType, language = "auto", retries = 3
       if (!response.ok) {
         const err = await response.text();
         if (response.status === 429 && attempt < retries) {
-          console.log(`Rate limit — waiting 30s... attempt ${attempt}/${retries}`);
-          await delay(30000);
+          const waitTime = attempt * 15000;
+          console.log(`Rate limit — waiting ${waitTime/1000}s... attempt ${attempt}/${retries}`);
+          await delay(waitTime);
           continue;
+        }
+        if (response.status === 429) {
+          throw new Error("Rate limit exceeded. Please wait 1 minute and try again.");
         }
         if ((response.status === 502 || response.status === 503) && attempt < retries) {
           console.log(`Server error ${response.status} — retry ${attempt}/${retries}`);
@@ -169,17 +189,23 @@ async function extractFromImage(buffer, mimeType, language = "auto", retries = 3
 
       try {
         const parsed = JSON.parse(raw);
-        return parsed; // array ya single object dono as-is
+        return parsed;
       } catch {
-        // pehle array try karo
         const arrMatch = raw.match(/\[[\s\S]*\]/);
         if (arrMatch) return JSON.parse(arrMatch[0]);
-        // phir single object try karo
         const objMatch = raw.match(/\{[\s\S]*\}/);
         if (objMatch) return JSON.parse(objMatch[0]);
         throw new Error("Parse failed: " + raw.slice(0, 100));
       }
     } catch (err) {
+      if (err.name === "AbortError") {
+        if (attempt < retries) {
+          console.log(`Timeout — retry ${attempt}/${retries}`);
+          await delay(3000);
+          continue;
+        }
+        throw new Error("Request timeout — please try again");
+      }
       if (attempt === retries) throw err;
     }
   }
@@ -193,7 +219,6 @@ app.post("/api/extract", upload.single("card"), async (req, res) => {
     const parsed = await extractFromImage(req.file.buffer, req.file.mimetype, language);
 
     if (Array.isArray(parsed)) {
-      // ek image mein multiple cards detected
       const results = parsed.map((data, i) => ({
         filename: `${req.file.originalname} — Card ${i + 1}`,
         status: "success",
@@ -209,9 +234,7 @@ app.post("/api/extract", upload.single("card"), async (req, res) => {
   }
 });
 
-// Bulk
-const BATCH_SIZE = 2;
-
+// Bulk — fetch streaming ke saath
 app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0)
@@ -219,18 +242,24 @@ app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
 
     const language = req.body.language || "auto";
     const files = req.files;
-    console.log(`Bulk: ${files.length} cards | Language: ${language}`);
+    const { batchSize, batchDelay } = BATCH_CONFIG[language] || BATCH_CONFIG.auto;
+
+    console.log(`Bulk: ${files.length} cards | Language: ${language} | Batch: ${batchSize}`);
+
+    // Streaming headers
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Transfer-Encoding", "chunked");
+    res.setHeader("X-Accel-Buffering", "no");
+
     const results = [];
 
-    for (let i = 0; i < files.length; i += BATCH_SIZE) {
-      const batch = files.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < files.length; i += batchSize) {
+      const batch = files.slice(i, i + batchSize);
       await Promise.all(
         batch.map(async (file) => {
           try {
             const parsed = await extractFromImage(file.buffer, file.mimetype, language);
-
             if (Array.isArray(parsed)) {
-              // ek image mein multiple cards
               parsed.forEach((data, j) => {
                 results.push({
                   filename: `${file.originalname} — Card ${j + 1}`,
@@ -248,10 +277,14 @@ app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
           }
         })
       );
-      if (i + BATCH_SIZE < files.length) await delay(31000);
+
+      // Keep connection alive
+      res.write(" ");
+
+      if (i + batchSize < files.length) await delay(batchDelay);
     }
 
-    res.json({ success: true, results });
+    res.end(JSON.stringify({ success: true, results }));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
