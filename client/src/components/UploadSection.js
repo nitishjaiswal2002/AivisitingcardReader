@@ -11,7 +11,7 @@ const compressImage = (file) => {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement("canvas");
-        const MAX = 600; // mobile ke liye smaller
+        const MAX = 1000;
         let { width, height } = img;
         if (width > MAX || height > MAX) {
           if (width > height) {
@@ -29,7 +29,7 @@ const compressImage = (file) => {
         canvas.toBlob(
           (blob) => resolve(new File([blob], file.name, { type: "image/jpeg" })),
           "image/jpeg",
-          0.65 // mobile ke liye lower quality
+          0.82
         );
       };
       img.src = e.target.result;
@@ -121,7 +121,7 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
 
         const res = await axios.post(`${BASE_URL}/api/extract`, formData, {
           headers: { "Content-Type": "multipart/form-data" },
-          timeout: 120000, // 2 min
+          timeout: 120000,
         });
 
         if (res.data.success) {
@@ -138,13 +138,19 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
         files.forEach((f) => formData.append("cards", f));
         formData.append("language", language);
 
-        const res = await axios.post(`${BASE_URL}/api/extract-bulk`, formData, {
-          headers: { "Content-Type": "multipart/form-data" },
-          timeout: 300000, // 5 min bulk ke liye
+        const response = await fetch(`${BASE_URL}/api/extract-bulk`, {
+          method: "POST",
+          body: formData,
         });
 
-        if (res.data.success) {
-          onResults(res.data.results);
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({ error: "Server error" }));
+          throw new Error(err.error || "Server error");
+        }
+
+        const data = await response.json();
+        if (data.success) {
+          onResults(data.results);
         }
       }
     } catch (err) {
@@ -216,19 +222,12 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
         />
       </div>
 
-      {/* Mobile only — single mode mein Gallery + Camera buttons */}
       {mode === "single" && !compressing && (
         <div className="upload-btns">
-          <button
-            className="upload-opt-btn"
-            onClick={() => fileInputRef.current.click()}
-          >
+          <button className="upload-opt-btn" onClick={() => fileInputRef.current.click()}>
             🖼️ Gallery
           </button>
-          <button
-            className="upload-opt-btn"
-            onClick={() => cameraInputRef.current.click()}
-          >
+          <button className="upload-opt-btn" onClick={() => cameraInputRef.current.click()}>
             📷 Camera
           </button>
         </div>
@@ -268,7 +267,7 @@ function UploadSection({ mode, language, setLoading, setError, onResults }) {
           >
             {!isProcessing && <span>🤖</span>}
             {isProcessing
-              ? "🤖 AI is reading your card..."
+              ? `🤖 Processing ${files.length} cards... please wait`
               : `Extract Details from ${previews.length} Card${previews.length > 1 ? "s" : ""}`
             }
           </button>

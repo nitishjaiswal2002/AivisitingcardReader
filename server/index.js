@@ -11,18 +11,27 @@ const PORT = process.env.PORT || 5000;
 const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
 
 const MODELS = {
-  english: "mistral-small-latest",
+  english: "mistral-small-3.1-latest",
   hindi: "pixtral-12b-2409",
-  auto: "mistral-small-latest",
+  auto: "",
 };
 
 const PROMPTS = {
-  english: `Extract all details from this visiting/business card (English).
-IMPORTANT:
+  english: `You are an expert OCR system specialized in reading business cards.
+Extract ALL details from this business card image with 100% accuracy.
+
+CRITICAL RULES:
+- Read EVERY character carefully — especially phone numbers and email addresses
+- Phone/Mobile: extract EXACT digits — do not add or remove any digit
+- Email: look for @ symbol — copy exactly as written
+- Address: read full address including building, street, area, city, pincode
+- If a field has multiple values (e.g. two phone numbers) put them comma separated
 - If image has ONE card → return a single JSON object
 - If image has MULTIPLE cards → return a JSON array of objects, one per card
 - Return ONLY JSON. No explanation, no markdown, no code block.
-- Each object must have these exact fields (use "" if not found):
+- Use "" if a field is not found
+
+Each object must have these exact fields:
 {
   "name": "",
   "designation": "",
@@ -42,16 +51,23 @@ IMPORTANT:
   "whatsapp": ""
 }`,
 
-  hindi: `Extract all details from this visiting/business card in Hindi (Devanagari script).
-IMPORTANT:
-- If image has ONE card → return a single JSON object
-- If image has MULTIPLE cards → return a JSON array of objects, one per card
+  hindi: `You are an expert OCR system specialized in reading Hindi and English business cards.
+Extract ALL details from this business card image with 100% accuracy.
+
+CRITICAL RULES:
+- Card is in Hindi (Devanagari script) — read every character carefully
 - Transliterate Hindi names to English (e.g. "राहुल शर्मा" → "Rahul Sharma")
 - Translate Hindi designations/company to English (e.g. "प्रबंधक" → "Manager")
-- Keep phone numbers, emails, websites as-is
-- Use "" if a field is not found
+- Phone/Mobile: extract EXACT digits — do not add or remove any digit
+- Email: look for @ symbol — copy exactly as written
+- Address: read full address including building, street, area, city, pincode
+- If a field has multiple values put them comma separated
+- If image has ONE card → return a single JSON object
+- If image has MULTIPLE cards → return a JSON array of objects, one per card
 - Return ONLY JSON. No explanation, no markdown, no code block.
-- Each object must have these exact fields:
+- Use "" if a field is not found
+
+Each object must have these exact fields:
 {
   "name": "",
   "designation": "",
@@ -71,15 +87,23 @@ IMPORTANT:
   "whatsapp": ""
 }`,
 
-  auto: `Extract all details from this visiting/business card (English, Hindi, or mixed).
-IMPORTANT:
+  auto: `You are an expert OCR system specialized in reading business cards.
+Extract ALL details from this business card image with 100% accuracy.
+Card may be in English, Hindi (Devanagari), or a mix of both.
+
+CRITICAL RULES:
+- Read EVERY character carefully — especially phone numbers and email addresses
+- Phone/Mobile: extract EXACT digits — do not add or remove any digit
+- Email: look for @ symbol — copy exactly as written
+- Address: read full address including building, street, area, city, pincode
+- If Hindi text found, transliterate names and translate designations to English
+- If a field has multiple values put them comma separated
 - If image has ONE card → return a single JSON object
 - If image has MULTIPLE cards → return a JSON array of objects, one per card
-- If Hindi/Devanagari text found, transliterate names and translate designations to English
-- Keep phone numbers, emails, websites as-is
-- Use "" if a field is not found
 - Return ONLY JSON. No explanation, no markdown, no code block.
-- Each object must have these exact fields:
+- Use "" if a field is not found
+
+Each object must have these exact fields:
 {
   "name": "",
   "designation": "",
@@ -159,7 +183,7 @@ async function extractFromImage(buffer, mimeType, language = "auto", retries = 5
               ],
             },
           ],
-          max_tokens: 800,
+          max_tokens: 1200,
         }),
       });
 
@@ -234,7 +258,7 @@ app.post("/api/extract", upload.single("card"), async (req, res) => {
   }
 });
 
-// Bulk — race condition fix + streaming
+// Bulk
 app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0)
@@ -250,13 +274,13 @@ app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
     res.setHeader("Transfer-Encoding", "chunked");
     res.setHeader("X-Accel-Buffering", "no");
 
-    const results = new Array(files.length); // ← fixed size — order maintain hoga
+    const results = new Array(files.length);
 
     for (let i = 0; i < files.length; i += batchSize) {
       const batch = files.slice(i, i + batchSize);
       await Promise.all(
         batch.map(async (file, j) => {
-          const idx = i + j; // ← exact index
+          const idx = i + j;
           try {
             const parsed = await extractFromImage(file.buffer, file.mimetype, language);
             if (Array.isArray(parsed)) {
@@ -285,13 +309,12 @@ app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
         })
       );
 
-      res.write(" "); // keep alive
+      res.write(" ");
 
       if (i + batchSize < files.length) await delay(batchDelay);
     }
 
-    const flatResults = results.flat(); // nested arrays flat karo
-
+    const flatResults = results.flat();
     res.end(JSON.stringify({ success: true, results: flatResults }));
   } catch (err) {
     res.status(500).json({ error: err.message });
