@@ -13,111 +13,57 @@ const OCR_MODEL = "mistral-ocr-latest";
 const EXTRACT_MODEL = "mistral-medium-latest"; // best available vision model
 
 const PROMPTS = {
-  english: `You are the world's best business card OCR and data extraction specialist.
-Your job is to extract 100% accurate information from business card OCR text.
+  english: `You are the world's best business card data extraction specialist.
+Given OCR text from a business card, extract information into JSON.
 
-STRICT CHARACTER CORRECTION RULES — Apply these ALWAYS:
-1. EMAIL addresses:
-   - 'l' (lowercase L) and 'I' (uppercase i) and '1' (one) — use context to pick correct one
-   - 'rn' together often looks like 'm' — e.g. "grnail" → "gmail", "yarnoo" → "yahoo"
-   - '0' (zero) vs 'O' (letter) — emails use letters, not zeros in domain names
-   - Common domains: gmail.com, yahoo.com, hotmail.com, outlook.com, rediffmail.com
-   - Always fix obvious OCR errors in email domains using above knowledge
-   - '@' symbol must be present — if missing, look for 'a' surrounded by words
+CRITICAL RULES — READ CAREFULLY:
 
-2. PHONE / MOBILE numbers:
+1. DO NOT MODIFY OR CORRECT text that looks intentional:
+   - Roman numerals like III, IV, VI — keep as-is, do NOT convert to "jil" or anything else
+   - Abbreviations like Pvt, Ltd, Co, Inc — keep as-is
+   - ALL CAPS names/companies — convert to Proper Case but keep spelling exact
+   - Unusual spellings in names/companies — keep as-is, they may be intentional
+
+2. EMAIL addresses — fix ONLY obvious OCR errors:
+   - Fix domain names only: "grnail" → "gmail", "yarnoo" → "yahoo", "rediffrnail" → "rediffmail"
+   - Fix '@' if missing — look for context
+   - Do NOT change the username part (before @) unless clearly wrong
+   - Common domains: gmail.com, yahoo.com, hotmail.com, outlook.com, rediffmail.com, yahoo.co.in
+
+3. PHONE / MOBILE numbers:
    - Contains ONLY digits 0-9, +, -, (, ), space
-   - Remove any letters that crept in (e.g. 'O' → '0', 'l' → '1', 'I' → '1')
-   - Indian numbers: 10 digits, may start with +91 or 0
+   - Indian mobile: 10 digits, may have +91 prefix
    - If two numbers present, put in phone and mobile separately
+   - Do NOT add or remove digits
 
-3. NAMES:
-   - Proper case — first letter capital (e.g. "RAHUL SHARMA" → "Rahul Sharma")
-   - 'rn' → 'm' fix (e.g. "Arnit" might be "Amit")
-   - Remove extra spaces
+4. NAMES:
+   - Proper case — "RAHUL SHARMA" → "Rahul Sharma"
+   - Keep exact spelling — do NOT guess or autocorrect names
+   - Roman numerals in names (III, Jr, Sr) — keep exactly as written
 
-4. COMPANY names:
-   - Keep original casing if mixed case
-   - Fix obvious OCR errors using context
+5. COMPANY names:
+   - Keep original spelling exactly
+   - Only fix case if ALL CAPS → Proper Case
+   - Roman numerals (III, IV) — keep as-is
 
-5. WEBSITE:
-   - Usually starts with www. or http
-   - Fix common errors: 'cornpany' → 'company', 'vvww' → 'www'
+6. WEBSITE:
+   - Fix 'vvww' → 'www' only
+   - Keep rest exactly as written
 
-6. ADDRESS:
-   - Extract complete address — building, street, area, city, state, pincode
-   - Indian pincodes are 6 digits
-   - Put city in city field, state in state field separately
-
-7. GENERAL:
-   - If a field has multiple values, comma separate them
-   - If image has ONE card → return a single JSON object
-   - If image has MULTIPLE cards → return a JSON array of objects, one per card
-   - Return ONLY JSON. No explanation, no markdown, no code blocks.
-   - Use "" if field not found
-
-Return ONLY this JSON structure:
-{
-  "name": "",
-  "designation": "",
-  "company": "",
-  "email": "",
-  "phone": "",
-  "mobile": "",
-  "website": "",
-  "address": "",
-  "city": "",
-  "state": "",
-  "country": "",
-  "products": "",
-  "linkedin": "",
-  "twitter": "",
-  "instagram": "",
-  "whatsapp": ""
-}`,
-
-  hindi: `You are the world's best business card OCR and data extraction specialist for Hindi and English cards.
-Your job is to extract 100% accurate information from business card OCR text.
-
-HINDI SPECIFIC RULES:
-- Card may be in Hindi (Devanagari), English, or mixed
-- Transliterate Hindi names to English (e.g. "राहुल शर्मा" → "Rahul Sharma")
-- Translate Hindi designations to English (e.g. "प्रबंधक" → "Manager", "मालिक" → "Owner", "निदेशक" → "Director")
-- Translate Hindi company types (e.g. "प्राइवेट लिमिटेड" → "Pvt Ltd")
-- Translate Hindi city/state names to English (e.g. "मुंबई" → "Mumbai")
-
-STRICT CHARACTER CORRECTION RULES — Apply these ALWAYS:
-1. EMAIL addresses:
-   - 'l' (lowercase L) and 'I' (uppercase i) and '1' (one) — use context to pick correct one
-   - 'rn' together often looks like 'm' — e.g. "grnail" → "gmail", "yarnoo" → "yahoo"
-   - '0' (zero) vs 'O' (letter) — emails use letters not zeros in domain names
-   - Common domains: gmail.com, yahoo.com, hotmail.com, outlook.com, rediffmail.com
-   - Always fix obvious OCR errors in email domains
-   - '@' symbol must be present
-
-2. PHONE / MOBILE numbers:
-   - Contains ONLY digits 0-9, +, -, (, ), space
-   - Remove any letters (e.g. 'O' → '0', 'l' → '1', 'I' → '1')
-   - Indian numbers: 10 digits, may start with +91 or 0
-   - If two numbers present, put in phone and mobile separately
-
-3. NAMES:
-   - Proper case after transliteration
-   - Fix 'rn' → 'm' confusion
-
-4. ADDRESS:
+7. ADDRESS:
    - Extract complete address
    - Put city in city field, state in state field separately
    - Indian pincodes are 6 digits
+   - Country default "India" if address looks Indian
 
-5. GENERAL:
-   - If a field has multiple values, comma separate them
-   - If image has ONE card → return a single JSON object
-   - If image has MULTIPLE cards → return a JSON array of objects, one per card
+8. GENERAL:
+   - Multiple values → comma separated
+   - If ONE card → single JSON object
+   - If MULTIPLE cards → JSON array
    - Return ONLY JSON. No explanation, no markdown, no code blocks.
    - Use "" if field not found
 
-Return ONLY this JSON structure:
+Return ONLY this JSON:
 {
   "name": "",
   "designation": "",
@@ -137,64 +83,133 @@ Return ONLY this JSON structure:
   "whatsapp": ""
 }`,
 
-  auto: `You are the world's best business card OCR and data extraction specialist.
-Your job is to extract 100% accurate information from business card OCR text.
-Card may be in English, Hindi (Devanagari), or a mix of both.
+  hindi: `You are the world's best business card data extraction specialist for Hindi and English cards.
+Given OCR text from a business card, extract information into JSON.
+
+HINDI SPECIFIC RULES:
+- Transliterate Hindi names to English (e.g. "राहुल शर्मा" → "Rahul Sharma")
+- Translate Hindi designations (e.g. "प्रबंधक" → "Manager", "मालिक" → "Owner", "निदेशक" → "Director")
+- Translate Hindi company types (e.g. "प्राइवेट लिमिटेड" → "Pvt Ltd")
+- Translate Hindi city/state (e.g. "मुंबई" → "Mumbai", "दिल्ली" → "Delhi")
+
+CRITICAL RULES — READ CAREFULLY:
+
+1. DO NOT MODIFY OR CORRECT text that looks intentional:
+   - Roman numerals like III, IV, VI — keep as-is
+   - Abbreviations — keep as-is
+   - Unusual spellings — keep as-is, they may be intentional
+
+2. EMAIL addresses — fix ONLY obvious OCR errors:
+   - Fix domain names only: "grnail" → "gmail", "yarnoo" → "yahoo"
+   - Common domains: gmail.com, yahoo.com, hotmail.com, rediffmail.com, yahoo.co.in
+   - Do NOT change username part unless clearly wrong
+
+3. PHONE / MOBILE numbers:
+   - Contains ONLY digits 0-9, +, -, (, ), space
+   - Indian mobile: 10 digits, may have +91 prefix
+   - Do NOT add or remove digits
+
+4. NAMES:
+   - Proper case after transliteration
+   - Keep exact spelling — do NOT autocorrect
+
+5. ADDRESS:
+   - Extract complete address
+   - City in city field, state in state field separately
+   - Indian pincodes are 6 digits
+
+6. GENERAL:
+   - Multiple values → comma separated
+   - If ONE card → single JSON object
+   - If MULTIPLE cards → JSON array
+   - Return ONLY JSON. No explanation, no markdown.
+   - Use "" if field not found
+
+Return ONLY this JSON:
+{
+  "name": "",
+  "designation": "",
+  "company": "",
+  "email": "",
+  "phone": "",
+  "mobile": "",
+  "website": "",
+  "address": "",
+  "city": "",
+  "state": "",
+  "country": "",
+  "products": "",
+  "linkedin": "",
+  "twitter": "",
+  "instagram": "",
+  "whatsapp": ""
+}`,
+
+  auto: `You are the world's best business card data extraction specialist.
+Given OCR text from a business card, extract information into JSON.
+Card may be in English, Hindi (Devanagari), or mixed.
 
 HINDI HANDLING:
 - Transliterate Hindi names to English (e.g. "राहुल शर्मा" → "Rahul Sharma")
-- Translate Hindi designations to English (e.g. "प्रबंधक" → "Manager", "मालिक" → "Owner")
-- Translate Hindi city/state to English (e.g. "मुंबई" → "Mumbai", "दिल्ली" → "Delhi")
+- Translate Hindi designations (e.g. "प्रबंधक" → "Manager", "मालिक" → "Owner")
+- Translate Hindi city/state (e.g. "मुंबई" → "Mumbai", "दिल्ली" → "Delhi")
 
-STRICT CHARACTER CORRECTION RULES — Apply these ALWAYS:
-1. EMAIL addresses:
-   - 'l' (lowercase L) and 'I' (uppercase i) and '1' (one) — use context to pick correct one
-   - 'rn' together often looks like 'm' — e.g. "grnail" → "gmail", "yarnoo" → "yahoo"
-   - '0' (zero) vs 'O' (letter) — emails use letters not zeros in domain names
-   - Common Indian email domains: gmail.com, yahoo.com, yahoo.co.in, hotmail.com, outlook.com, rediffmail.com
-   - Always fix obvious OCR errors in email domains using domain knowledge
-   - '@' symbol must be present — if missing look for context clue
+CRITICAL RULES — READ CAREFULLY:
 
-2. PHONE / MOBILE numbers:
-   - Contains ONLY digits 0-9, +, -, (, ), space — remove any letters
-   - 'O' → '0', 'l' → '1', 'I' → '1', 'S' → '5', 'B' → '8'
-   - Indian mobile: exactly 10 digits, may have +91 prefix
-   - Landline: may have STD code like (022), (011)
-   - If two numbers found, put first in phone, second in mobile
+1. DO NOT MODIFY OR CORRECT text that looks intentional:
+   - Roman numerals like III, IV, VI, IX — keep EXACTLY as written, never convert to letters
+   - "III" is THREE in Roman numerals — NOT "jil", NOT "lll", NOT anything else
+   - Abbreviations like Pvt, Ltd, Co, Inc, Sr, Jr — keep as-is
+   - Unusual name spellings — keep as-is, they are intentional
+   - ALL CAPS → convert to Proper Case but keep exact spelling
 
-3. NAMES:
+2. EMAIL addresses — fix ONLY obvious OCR domain errors:
+   - "grnail" → "gmail", "yarnoo" → "yahoo", "rediffrnail" → "rediffmail"
+   - "hotrnail" → "hotmail", "outlOOk" → "outlook"
+   - Common Indian domains: gmail.com, yahoo.com, yahoo.co.in, hotmail.com, outlook.com, rediffmail.com
+   - Do NOT change the username part (before @) — it may have intentional spellings
+   - '@' must be present
+
+3. PHONE / MOBILE numbers:
+   - Contains ONLY digits 0-9, +, -, (, ), space
+   - Indian mobile: 10 digits, may have +91 prefix
+   - Landline: STD code + number e.g. (022) 12345678
+   - Do NOT add or remove any digit
+   - If two numbers found: first in phone, second in mobile
+
+4. NAMES:
    - Proper case — "JOHN DOE" → "John Doe"
-   - Fix 'rn' → 'm' where obvious
-   - Remove stray punctuation
+   - Keep EXACT spelling — never autocorrect or guess
+   - Roman numerals (III, Jr, Sr) — keep exactly as written
 
-4. COMPANY names:
-   - Keep original formatting
-   - Fix 'cornpany' → 'company', 'lirnited' → 'limited', 'Pvt' stays 'Pvt'
+5. COMPANY names:
+   - Keep original spelling exactly
+   - Roman numerals — keep as-is (e.g. "ABC III Enterprises" stays "ABC III Enterprises")
 
-5. WEBSITE:
-   - Fix 'vvww' → 'www', 'cornpany' → 'company'
-   - Keep http:// or www. prefix
+6. WEBSITE:
+   - Fix only 'vvww' → 'www'
+   - Keep everything else exactly as written
 
-6. ADDRESS:
-   - Extract COMPLETE address — door number, building, street, area, city, state, pincode
-   - Split city into city field and state into state field
-   - Country default "India" if not mentioned and address looks Indian
+7. ADDRESS:
+   - Complete address — door, building, street, area, city, state, pincode
+   - City → city field, State → state field
+   - Country → "India" if address looks Indian and country not mentioned
    - Indian pincodes are exactly 6 digits
 
-7. SOCIAL MEDIA:
-   - LinkedIn: extract profile URL or username
-   - Twitter/X: extract handle with or without @
-   - Instagram: extract handle
-   - WhatsApp: extract number same as mobile format
+8. SOCIAL MEDIA:
+   - LinkedIn: URL or username
+   - Twitter/X: handle with or without @
+   - Instagram: handle
+   - WhatsApp: number in mobile format
 
-8. GENERAL:
+9. GENERAL:
    - Multiple values → comma separated
-   - If image has ONE card → return single JSON object
-   - If image has MULTIPLE cards → return JSON array, one object per card
+   - ONE card → single JSON object
+   - MULTIPLE cards → JSON array, one object per card
    - Return ONLY JSON. No explanation, no markdown, no code blocks.
    - Use "" if field not found
 
-Return ONLY this JSON structure:
+Return ONLY this JSON:
 {
   "name": "",
   "designation": "",
