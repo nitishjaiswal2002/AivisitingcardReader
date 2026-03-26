@@ -13,6 +13,8 @@ function App() {
   const [error, setError] = useState("");
   const [mode, setMode] = useState("single");
   const [language, setLanguage] = useState("auto");
+  const [cardSide, setCardSide] = useState("front");
+  const [bulkCardSide, setBulkCardSide] = useState("single");
 
   const handleResults = (data) => setResults(data);
 
@@ -21,41 +23,98 @@ function App() {
     setError("");
   };
 
+  const handleModeChange = (newMode) => {
+    setMode(newMode);
+    setCardSide("front");
+    setBulkCardSide("single");
+    clearAll();
+  };
+
+  const handleCardSideChange = (side) => {
+    setCardSide(side);
+    clearAll();
+  };
+
+  const handleBulkCardSideChange = (side) => {
+    setBulkCardSide(side);
+    clearAll();
+  };
+
   return (
     <div className="app">
       <Header />
 
       <main className="main-content">
 
-        {/* How it Works */}
         <div id="how-it-works">
           <HowItWorks />
         </div>
 
-        {/* Upload Tool */}
         <div id="upload" className="upload-box">
-
           <div className="toggles-wrap">
-            {/* Mode Toggle */}
+
+            {/* Card Mode — Single / Bulk */}
             <div className="lang-toggle-wrap">
-              <span className="lang-label">Card Type:</span>
+              <span className="lang-label">Card Mode:</span>
               <div className="mode-toggle">
                 <button
                   className={`mode-btn ${mode === "single" ? "active" : ""}`}
-                  onClick={() => { setMode("single"); clearAll(); }}
+                  onClick={() => handleModeChange("single")}
                 >
                   Single Card
                 </button>
                 <button
                   className={`mode-btn ${mode === "bulk" ? "active" : ""}`}
-                  onClick={() => { setMode("bulk"); clearAll(); }}
+                  onClick={() => handleModeChange("bulk")}
                 >
                   Bulk Upload
                 </button>
               </div>
             </div>
 
-            {/* Language Toggle */}
+            {/* Card Side — Single mode */}
+            {mode === "single" && (
+              <div className="lang-toggle-wrap">
+                <span className="lang-label">Card Side:</span>
+                <div className="lang-toggle">
+                  <button
+                    className={`lang-btn ${cardSide === "front" ? "active" : ""}`}
+                    onClick={() => handleCardSideChange("front")}
+                  >
+                    🃏 Only Front
+                  </button>
+                  <button
+                    className={`lang-btn ${cardSide === "frontback" ? "active" : ""}`}
+                    onClick={() => handleCardSideChange("frontback")}
+                  >
+                    🔄 Front + Back
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Card Side — Bulk mode */}
+            {mode === "bulk" && (
+              <div className="lang-toggle-wrap">
+                <span className="lang-label">Card Side:</span>
+                <div className="lang-toggle">
+                  <button
+                    className={`lang-btn ${bulkCardSide === "single" ? "active" : ""}`}
+                    onClick={() => handleBulkCardSideChange("single")}
+                  >
+                    🃏 Single Side
+                  </button>
+                  <button
+                    className={`lang-btn ${bulkCardSide === "frontback" ? "active" : ""}`}
+                    onClick={() => handleBulkCardSideChange("frontback")}
+                  >
+                    🔄 Front + Back
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Card Language */}
             <div className="lang-toggle-wrap">
               <span className="lang-label">Card Language:</span>
               <div className="lang-toggle">
@@ -79,10 +138,13 @@ function App() {
                 </button>
               </div>
             </div>
+
           </div>
 
           <UploadSection
             mode={mode}
+            cardSide={cardSide}
+            bulkCardSide={bulkCardSide}
             language={language}
             setLoading={setLoading}
             setError={setError}
@@ -111,12 +173,10 @@ function App() {
           )}
         </div>
 
-        {/* Testimonials */}
         <div id="testimonials">
           <Testimonials />
         </div>
 
-        {/* FAQ placeholder */}
         <div id="faq" />
 
       </main>
