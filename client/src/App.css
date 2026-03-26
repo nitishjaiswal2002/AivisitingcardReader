@@ -2,6 +2,7 @@
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  background: #f1f5f9;
 }
 
 .main-content {
@@ -11,12 +12,30 @@
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 32px;
+}
+
+/* Upload tool box */
+.upload-box {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+  border: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.toggles-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .mode-toggle {
   display: flex;
-  background: #fff;
+  background: #f8fafc;
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 4px;
@@ -81,7 +100,6 @@
   to { transform: rotate(360deg); }
 }
 
-
 .lang-toggle-wrap {
   display: flex;
   align-items: center;
@@ -97,7 +115,7 @@
 
 .lang-toggle {
   display: flex;
-  background: #fff;
+  background: #f8fafc;
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 4px;
@@ -120,4 +138,111 @@
   background: var(--blue);
   color: #fff;
   box-shadow: 0 2px 4px rgba(37, 99, 235, 0.3);
+}
+
+@media (max-width: 600px) {
+  .main-content {
+    padding: 16px 12px;
+    gap: 20px;
+  }
+
+  .upload-box {
+    padding: 16px;
+  }
+
+.lang-toggle-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+}
+
+
+@media (max-width: 480px) {
+  .app {
+    min-height: 100vh;
+  }
+
+  .main-content {
+    padding: 14px 10px;
+    gap: 18px;
+  }
+
+  /* Upload box */
+  .upload-box {
+    padding: 14px;
+    border-radius: 12px;
+    gap: 14px;
+  }
+
+  /* Mode toggle */
+  .mode-toggle {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .mode-btn {
+    flex: 1;
+    padding: 8px 10px;
+    font-size: 12px;
+    text-align: center;
+  }
+
+  /* Language toggle */
+  .lang-toggle-wrap {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .lang-label {
+    font-size: 12px;
+  }
+
+  .lang-toggle {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .lang-btn {
+    flex: 1;
+    padding: 6px 10px;
+    font-size: 12px;
+    text-align: center;
+  }
+
+  /* Error box */
+  .error-box {
+    font-size: 12px;
+    padding: 10px 12px;
+  }
+
+  /* Loading box */
+  .loading-box {
+    font-size: 12px;
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .spinner {
+    width: 16px;
+    height: 16px;
+    border-width: 2px;
+  }
+
+  /* Buttons (general improvement if any) */
+  button {
+    font-size: 12px;
+    padding: 8px 10px;
+  }
+
+  /* Inputs (if used inside upload UI) */
+  input,
+  textarea,
+  select {
+    font-size: 12px;
+    padding: 8px;
+  }
 }
