@@ -2,16 +2,16 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 import dotenv from "dotenv";
-import mongoose from "mongoose";
+//import mongoose from "mongoose";
 
-dotenv.config();
+//dotenv.config();
 
-console.log("MONGO URI:", process.env.MONGO_URI);
-if (!process.env.MONGO_URI) throw new Error("❌ MONGO_URI missing in .env");
+//console.log("MONGO URI:", process.env.MONGO_URI);
+//if (!process.env.MONGO_URI) throw new Error("❌ MONGO_URI missing in .env");
 
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB Connected"))
-  .catch(err => console.error("❌ Mongo Error:", err));
+//mongoose.connect(process.env.MONGO_URI)
+  //.then(() => console.log("✅ MongoDB Connected"))
+  //.catch(err => console.error("❌ Mongo Error:", err));
 
 const app = express();
 const PORT = process.env.PORT || 5000;
