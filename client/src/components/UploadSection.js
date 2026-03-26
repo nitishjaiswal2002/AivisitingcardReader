@@ -1,8 +1,9 @@
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 import axios from "axios";
 import "./UploadSection.css";
 
-const BASE_URL = (process.env.REACT_APP_API_URL || "").replace(/\/$/, "");
+// ── FIX 1: BASE_URL — fallback to localhost:5000 if env not set ───────────────
+const BASE_URL = (process.env.REACT_APP_API_URL || "http://localhost:5000").replace(/\/$/, "");
 
 const compressImage = (file) => {
   return new Promise((resolve) => {
@@ -38,13 +39,10 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
   const [countdown, setCountdown]       = useState(0);
   const [compressing, setCompressing]   = useState(false);
 
-  // Single front+back
   const [frontFile, setFrontFile]       = useState(null);
   const [backFile, setBackFile]         = useState(null);
   const [frontPreview, setFrontPreview] = useState(null);
   const [backPreview, setBackPreview]   = useState(null);
-
-  // Bulk front+back
   const [bulkItems, setBulkItems]       = useState([]);
 
   const lastClickRef   = useRef(0);
@@ -59,8 +57,8 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
 
   const isMobile = () => window.innerWidth < 769;
 
-  // Reset state when props change
-  React.useEffect(() => {
+  // ── FIX 2: setError ko dependency array se hataao — infinite loop fix ────────
+  useEffect(() => {
     setFiles([]);
     setPreviews([]);
     setFrontFile(null);
@@ -145,7 +143,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
 
   const buildPairs = (items) => {
     const fronts   = items.filter((i) => i.role === "front");
-    const backs    = items.filter((i) => i.role === "back");
+    const backs    = [...items.filter((i) => i.role === "back")]; // copy to avoid mutation
     const pairs    = [];
     const unpaired = [];
     fronts.forEach((f) => {
@@ -174,6 +172,8 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
 
   const handleExtract = useCallback(async () => {
     const now = Date.now();
+
+    // Countdown throttle
     if (now - lastClickRef.current < 60000) {
       const remaining = Math.ceil((60000 - (now - lastClickRef.current)) / 1000);
       setCountdown(remaining);
@@ -188,6 +188,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
     }
     if (isProcessing) return;
 
+    // Validation
     if (mode === "single" && cardSide === "frontback") {
       if (!frontFile) { setError("Front side ki image upload karo"); return; }
       if (!backFile)  { setError("Back side ki image upload karo");  return; }
@@ -207,11 +208,18 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
     setLoading(true);
     setError("");
 
+    // ── FIX 3: Console log for debugging ─────────────────────────────────────
+    console.log("BASE_URL:", BASE_URL);
+    console.log("mode:", mode, "| cardSide:", cardSide, "| bulkCardSide:", bulkCardSide);
+
     try {
+      // ── Single front only ──────────────────────────────────────────────────
       if (mode === "single" && cardSide === "front") {
         const formData = new FormData();
         formData.append("card", files[0]);
         formData.append("language", language);
+
+        console.log("Calling:", `${BASE_URL}/api/extract`);
         const res = await axios.post(`${BASE_URL}/api/extract`, formData, {
           headers: { "Content-Type": "multipart/form-data" },
           timeout: 120000,
@@ -223,11 +231,14 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
         } else { setError("Data extract nahi hua"); }
       }
 
+      // ── Single front + back ────────────────────────────────────────────────
       else if (mode === "single" && cardSide === "frontback") {
         const formData = new FormData();
         formData.append("front", frontFile);
         formData.append("back", backFile);
         formData.append("language", language);
+
+        console.log("Calling:", `${BASE_URL}/api/extract-frontback`);
         const res = await axios.post(`${BASE_URL}/api/extract-frontback`, formData, {
           headers: { "Content-Type": "multipart/form-data" },
           timeout: 180000,
@@ -237,29 +248,39 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
         } else { setError("Data extract nahi hua"); }
       }
 
+      // ── Bulk single side ───────────────────────────────────────────────────
       else if (mode === "bulk" && bulkCardSide === "single") {
         const formData = new FormData();
         files.forEach((f) => formData.append("cards", f));
         formData.append("language", language);
-        const response = await fetch(`${BASE_URL}/api/extract-bulk`, { method: "POST", body: formData });
+
+        console.log("Calling:", `${BASE_URL}/api/extract-bulk`);
+        const response = await fetch(`${BASE_URL}/api/extract-bulk`, {
+          method: "POST",
+          body: formData,
+        });
         if (!response.ok) {
           const err = await response.json().catch(() => ({ error: "Server error" }));
-          throw new Error(err.error || "Server error");
+          throw new Error(err.error || `Server error ${response.status}`);
         }
         const data = await response.json();
         if (data.success) onResults(data.results);
       }
 
+      // ── Bulk front + back ──────────────────────────────────────────────────
       else if (mode === "bulk" && bulkCardSide === "frontback") {
         const { pairs, unpaired, remainingBacks } = buildPairs(bulkItems);
         const allResults = [];
 
+        // Process pairs sequentially to avoid rate limits
         for (const { front, back } of pairs) {
           try {
             const formData = new FormData();
             formData.append("front", front.file);
             formData.append("back", back.file);
             formData.append("language", language);
+
+            console.log("Calling pair:", `${BASE_URL}/api/extract-frontback`);
             const res = await axios.post(`${BASE_URL}/api/extract-frontback`, formData, {
               headers: { "Content-Type": "multipart/form-data" },
               timeout: 180000,
@@ -274,8 +295,9 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
           }
         }
 
-        if (unpaired.length > 0 || remainingBacks.length > 0) {
-          const singleCards = [...unpaired, ...remainingBacks];
+        // Process unpaired as single cards
+        const singleCards = [...unpaired, ...remainingBacks];
+        if (singleCards.length > 0) {
           const formData = new FormData();
           singleCards.forEach((item) => formData.append("cards", item.file));
           formData.append("language", language);
@@ -289,14 +311,21 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
             );
           }
         }
+
         onResults(allResults);
       }
+
     } catch (err) {
+      console.error("Extract error:", err);
       const msg = err.response?.data?.error || err.message || "";
-      if (msg.includes("429") || msg.includes("rate_limited")) {
+      if (msg.includes("404")) {
+        setError(`❌ Route not found — Check REACT_APP_API_URL in .env (current: ${BASE_URL})`);
+      } else if (msg.includes("429") || msg.includes("rate_limited")) {
         setError("⏳ Abhi bahut requests aa rahi hain — 1 minute baad dobara try karo");
       } else if (msg.includes("timeout") || msg.includes("ECONNABORTED")) {
         setError("⏳ Request timeout — dobara try karo");
+      } else if (msg.includes("Network Error") || msg.includes("ERR_CONNECTION_REFUSED")) {
+        setError(`❌ Server se connect nahi ho paya — kya server ${BASE_URL} pe chal raha hai?`);
       } else {
         setError(msg || "Server se connect nahi ho paya");
       }
@@ -322,7 +351,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
   return (
     <div className="upload-section">
 
-      {/* Single — Front+Back UI */}
+      {/* ── Single Front+Back UI ─────────────────────────────────────────── */}
       {mode === "single" && cardSide === "frontback" && (
         <div className="frontback-wrap">
           {/* Front */}
@@ -337,15 +366,14 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
             ) : (
               <div className="side-placeholder">No image selected</div>
             )}
-            {/* Desktop — sirf Gallery */}
             <div className="side-upload-btns">
               <button className="upload-opt-btn" onClick={() => frontFileRef.current.click()}>🖼️ Gallery</button>
               {isMobile() && (
                 <button className="upload-opt-btn" onClick={() => frontCameraRef.current.click()}>📷 Camera</button>
               )}
             </div>
-            <input ref={frontFileRef}   type="file" accept="image/*"                     style={{ display: "none" }} onChange={(e) => handleFrontFile(e.target.files)} />
-            <input ref={frontCameraRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={(e) => handleFrontFile(e.target.files)} />
+            <input ref={frontFileRef}   type="file" accept="image/*"                     style={{ display:"none" }} onChange={(e) => handleFrontFile(e.target.files)} />
+            <input ref={frontCameraRef} type="file" accept="image/*" capture="environment" style={{ display:"none" }} onChange={(e) => handleFrontFile(e.target.files)} />
           </div>
 
           {/* Back */}
@@ -360,25 +388,24 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
             ) : (
               <div className="side-placeholder">No image selected</div>
             )}
-            {/* Desktop — sirf Gallery */}
             <div className="side-upload-btns">
               <button className="upload-opt-btn" onClick={() => backFileRef.current.click()}>🖼️ Gallery</button>
               {isMobile() && (
                 <button className="upload-opt-btn" onClick={() => backCameraRef.current.click()}>📷 Camera</button>
               )}
             </div>
-            <input ref={backFileRef}   type="file" accept="image/*"                     style={{ display: "none" }} onChange={(e) => handleBackFile(e.target.files)} />
-            <input ref={backCameraRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={(e) => handleBackFile(e.target.files)} />
+            <input ref={backFileRef}   type="file" accept="image/*"                     style={{ display:"none" }} onChange={(e) => handleBackFile(e.target.files)} />
+            <input ref={backCameraRef} type="file" accept="image/*" capture="environment" style={{ display:"none" }} onChange={(e) => handleBackFile(e.target.files)} />
           </div>
         </div>
       )}
 
-      {/* Bulk — Front+Back UI */}
+      {/* ── Bulk Front+Back UI ───────────────────────────────────────────── */}
       {mode === "bulk" && bulkCardSide === "frontback" && (
         <div className="bulk-frontback-wrap">
           <div className="bulk-fb-info">
             <span>📌</span>
-            <span>Saari images upload karo → phir har image ke neeche <strong>Front</strong> ya <strong>Back</strong> button se role set karo → System automatically pair karega</span>
+            <span>Saari images upload karo → har image ke neeche <strong>Front</strong> ya <strong>Back</strong> set karo → System automatically pair karega</span>
           </div>
 
           <div
@@ -392,7 +419,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
             <p className="drop-title">{compressing ? "Optimizing..." : "Visiting cards upload karo (Front + Back dono)"}</p>
             <p className="drop-sub">JPG, PNG, WEBP • Max 50 images</p>
           </div>
-          <input ref={bulkFileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => handleBulkFrontBackFiles(e.target.files)} />
+          <input ref={bulkFileRef} type="file" accept="image/*" multiple style={{ display:"none" }} onChange={(e) => handleBulkFrontBackFiles(e.target.files)} />
 
           {compressing && <div className="compressing-msg">⏳ Optimizing images...</div>}
 
@@ -411,17 +438,13 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
                         onClick={() => setBulkItems((prev) =>
                           prev.map((i) => i.id === item.id ? { ...i, role: "front" } : i)
                         )}
-                      >
-                        📄 Front
-                      </button>
+                      >📄 Front</button>
                       <button
                         className={`role-btn ${item.role === "back" ? "role-active-back" : ""}`}
                         onClick={() => setBulkItems((prev) =>
                           prev.map((i) => i.id === item.id ? { ...i, role: "back" } : i)
                         )}
-                      >
-                        🔙 Back
-                      </button>
+                      >🔙 Back</button>
                     </div>
                   </div>
                 ))}
@@ -450,7 +473,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
         </div>
       )}
 
-      {/* Normal single/bulk UI */}
+      {/* ── Normal Single / Bulk Single-side UI ─────────────────────────── */}
       {((mode === "single" && cardSide === "front") ||
         (mode === "bulk" && bulkCardSide === "single")) && (
         <>
@@ -472,11 +495,10 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
             </p>
             <p className="drop-sub">JPG, PNG, WEBP supported</p>
             <p className="drop-limit">{mode === "single" ? "1 card at a time" : "Max 50 cards at once"}</p>
-            <input ref={fileInputRef}   type="file" accept="image/*" multiple={mode === "bulk"} style={{ display: "none" }} onChange={(e) => handleFiles(e.target.files)} />
-            <input ref={cameraInputRef} type="file" accept="image/*" capture="environment"      style={{ display: "none" }} onChange={(e) => handleFiles(e.target.files)} />
+            <input ref={fileInputRef}   type="file" accept="image/*" multiple={mode === "bulk"} style={{ display:"none" }} onChange={(e) => handleFiles(e.target.files)} />
+            <input ref={cameraInputRef} type="file" accept="image/*" capture="environment"      style={{ display:"none" }} onChange={(e) => handleFiles(e.target.files)} />
           </div>
 
-          {/* Mobile only — Gallery + Camera, Desktop — sirf Gallery */}
           {mode === "single" && !compressing && (
             <div className="upload-btns">
               <button className="upload-opt-btn" onClick={() => fileInputRef.current.click()}>🖼️ Gallery</button>
