@@ -2,16 +2,16 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 import dotenv from "dotenv";
-//import mongoose from "mongoose";
+import mongoose from "mongoose";
+import { saveCard, getAllCards } from "./Controller/cardController.js";
 
-//dotenv.config();
+dotenv.config();
 
-//console.log("MONGO URI:", process.env.MONGO_URI);
-//if (!process.env.MONGO_URI) throw new Error("❌ MONGO_URI missing in .env");
+if (!process.env.MONGO_URI) throw new Error("❌ MONGO_URI missing in .env");
 
-//mongoose.connect(process.env.MONGO_URI)
-  //.then(() => console.log("✅ MongoDB Connected"))
-  //.catch(err => console.error("❌ Mongo Error:", err));
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch(err => console.error("❌ Mongo Error:", err));
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -25,31 +25,12 @@ const PROMPTS = {
   english: `You are the world's best business card data extraction specialist.
 Given OCR text from a business card, extract information into JSON.
 
-CRITICAL RULES — READ CAREFULLY:
-
-1. DO NOT MODIFY OR CORRECT text that looks intentional:
-   - Roman numerals like III, IV, VI — keep as-is, do NOT convert to "jil" or anything else
-   - Abbreviations like Pvt, Ltd, Co, Inc — keep as-is
-   - ALL CAPS names/companies — convert to Proper Case but keep spelling exact
-   - Unusual spellings in names/companies — keep as-is, they may be intentional
-
-2. EMAIL addresses — fix ONLY obvious OCR errors:
-   - Fix domain names only: "grnail" → "gmail", "yarnoo" → "yahoo", "rediffrnail" → "rediffmail"
-   - Fix '@' if missing — look for context
-   - Do NOT change the username part (before @) unless clearly wrong
-   - Common domains: gmail.com, yahoo.com, hotmail.com, outlook.com, rediffmail.com, yahoo.co.in
-
-3. PHONE / MOBILE numbers:
-   - Contains ONLY digits 0-9, +, -, (, ), space
-   - Indian mobile: 10 digits, may have +91 prefix
-   - If two numbers present, put in phone and mobile separately
-   - Do NOT add or remove digits
-
-4. NAMES: Proper case. Keep exact spelling. Roman numerals — keep as written.
-5. COMPANY names: Keep original spelling. Only fix case if ALL CAPS.
-6. WEBSITE: Fix 'vvww' → 'www' only.
-7. ADDRESS: Complete address. City in city field. State in state field. 6-digit Indian pincodes.
-8. GENERAL: Multiple values → comma separated. ONE card → single JSON object. MULTIPLE → JSON array. Return ONLY JSON.
+CRITICAL RULES:
+1. Roman numerals like III, IV, VI — keep as-is
+2. EMAIL: fix domain OCR errors only (grnail→gmail, yarnoo→yahoo)
+3. PHONE: ONLY digits 0-9, +, -, (), space
+4. NAMES: Proper case, keep exact spelling
+5. ONE card → single JSON object. MULTIPLE → JSON array. Return ONLY JSON.
 
 Return ONLY this JSON:
 {
@@ -61,10 +42,9 @@ Return ONLY this JSON:
   hindi: `You are the world's best business card data extraction specialist for Hindi and English cards.
 Given OCR text from a business card, extract information into JSON.
 
-HINDI SPECIFIC RULES:
+HINDI RULES:
 - Transliterate Hindi names to English (e.g. "राहुल शर्मा" → "Rahul Sharma")
-- Translate Hindi designations (e.g. "प्रबंधक" → "Manager", "मालिक" → "Owner", "निदेशक" → "Director")
-- Translate Hindi company types (e.g. "प्राइवेट लिमिटेड" → "Pvt Ltd")
+- Translate Hindi designations (e.g. "प्रबंधक" → "Manager", "मालिक" → "Owner")
 - Translate Hindi city/state (e.g. "मुंबई" → "Mumbai", "दिल्ली" → "Delhi")
 
 CRITICAL RULES: Roman numerals — keep as-is. Fix email domains only. Phone: digits only. Return ONLY JSON.
@@ -81,9 +61,8 @@ Given OCR text from a business card, extract information into JSON.
 Card may be in English, Hindi (Devanagari), or mixed.
 
 HINDI HANDLING:
-- Transliterate Hindi names to English (e.g. "राहुल शर्मा" → "Rahul Sharma")
-- Translate Hindi designations (e.g. "प्रबंधक" → "Manager", "मालिक" → "Owner")
-- Translate Hindi city/state (e.g. "मुंबई" → "Mumbai", "दिल्ली" → "Delhi")
+- Transliterate Hindi names to English
+- Translate Hindi designations, city, state to English
 
 CRITICAL RULES:
 1. Roman numerals like III, IV — keep EXACTLY as written
@@ -100,29 +79,18 @@ Return ONLY this JSON:
 }`,
 };
 
-// ── Front+Back combined prompt ─────────────────────────────────────────────────
-// Dono sides ka OCR text ek saath deta hai — model merge karke ek card banata hai
 const FRONTBACK_PROMPT = `You are the world's best business card data extraction specialist.
-You are given OCR text from BOTH SIDES of a single business card:
-- FRONT SIDE: usually has name, designation, company, logo
-- BACK SIDE: usually has address, additional contact info, social media, products/services
+You are given OCR text from BOTH SIDES of a single business card.
+Combine into ONE complete JSON object.
 
-TASK: Combine information from BOTH sides into ONE complete JSON object.
+MERGING RULES:
+1. ADDRESS: Merge into one complete address
+2. PHONE/MOBILE: Different numbers → phone and mobile separately
+3. EMAIL: Same → keep one. Different → comma separated
+4. NAME/COMPANY/DESIGNATION: Prefer front side
+5. PRODUCTS: Back side product list → products field
 
-MERGING RULES — VERY IMPORTANT:
-1. ADDRESS: If address appears on both sides, merge them into ONE complete address — do NOT repeat, pick the most complete one or combine street + city + pincode from both
-2. PHONE/MOBILE: If different numbers on each side, put first in phone, second in mobile
-3. EMAIL: If same email on both sides, keep only one. If different, keep both comma separated
-4. NAME/COMPANY/DESIGNATION: Prefer front side values — they are usually more accurate
-5. PRODUCTS/SERVICES: If back side has product list, put in products field
-6. SOCIAL MEDIA: Back side usually has social links — extract all
-
-CRITICAL RULES:
-1. Roman numerals (III, IV, VI) — keep EXACTLY as written
-2. Email: fix domain OCR errors only (grnail→gmail, yarnoo→yahoo)
-3. Phone/Mobile: ONLY digits 0-9, +, -, (), space
-4. Names: Proper case, keep exact spelling
-5. Return ONLY ONE JSON object — no array, no markdown, no explanation
+CRITICAL RULES: Roman numerals as-is. Fix email domains only. Phone digits only. Return ONLY JSON.
 
 Return ONLY this JSON:
 {
@@ -151,7 +119,6 @@ app.use(express.json());
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Keep alive
 const RENDER_URL = process.env.RENDER_EXTERNAL_URL;
 if (RENDER_URL) {
   setInterval(() => {
@@ -193,7 +160,7 @@ async function ocrImage(buffer, mimeType, retries = 3) {
   }
 }
 
-// ── Extract from OCR text ─────────────────────────────────────────────────────
+// ── Extract from OCR ──────────────────────────────────────────────────────────
 async function extractFromOCR(ocrText, language = "auto", retries = 3) {
   const prompt = PROMPTS[language] || PROMPTS.auto;
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -206,7 +173,7 @@ async function extractFromOCR(ocrText, language = "auto", retries = 3) {
         headers: { "Authorization": `Bearer ${MISTRAL_API_KEY}`, "Content-Type": "application/json" },
         body: JSON.stringify({
           model: EXTRACT_MODEL,
-          messages: [{ role: "user", content: `${prompt}\n\nOCR Text from business card:\n${ocrText}` }],
+          messages: [{ role: "user", content: `${prompt}\n\nOCR Text:\n${ocrText}` }],
           max_tokens: 1200,
         }),
       });
@@ -235,10 +202,9 @@ async function extractFromOCR(ocrText, language = "auto", retries = 3) {
   }
 }
 
-// ── NEW: Extract from Front + Back combined ───────────────────────────────────
+// ── Extract Front+Back ────────────────────────────────────────────────────────
 async function extractFromFrontBack(frontOCR, backOCR, retries = 3) {
   const combinedText = `=== FRONT SIDE ===\n${frontOCR}\n\n=== BACK SIDE ===\n${backOCR}`;
-
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const controller = new AbortController();
@@ -257,7 +223,7 @@ async function extractFromFrontBack(frontOCR, backOCR, retries = 3) {
       if (!response.ok) {
         const err = await response.text();
         if (response.status === 429 && attempt < retries) { await delay(attempt * 15000); continue; }
-        throw new Error(`FrontBack extract error: ${response.status} — ${err}`);
+        throw new Error(`FrontBack error: ${response.status} — ${err}`);
       }
       const data = await response.json();
       const raw = data.choices?.[0]?.message?.content?.trim() || "";
@@ -269,7 +235,7 @@ async function extractFromFrontBack(frontOCR, backOCR, retries = 3) {
     } catch (err) {
       if (err.name === "AbortError") {
         if (attempt < retries) { await delay(3000); continue; }
-        throw new Error("FrontBack extract timeout");
+        throw new Error("FrontBack timeout");
       }
       if (attempt === retries) throw err;
     }
@@ -287,7 +253,6 @@ const cleanEmail = (val) => {
     "yarnoo.com": "yahoo.com", "yahooo.com": "yahoo.com", "yah00.com": "yahoo.com",
     "hotrnail.com": "hotmail.com", "hotmai.com": "hotmail.com",
     "rediffrnail.com": "rediffmail.com", "redifmail.com": "rediffmail.com",
-    "outlOOk.com": "outlook.com", "outl0ok.com": "outlook.com",
     "icloud.corn": "icloud.com", "gmail.corn": "gmail.com",
     "yahoo.corn": "yahoo.com", "hotmail.corn": "hotmail.com",
   };
@@ -313,34 +278,27 @@ const cleanResult = (obj) => {
   };
 };
 
-// ── Single image extract ──────────────────────────────────────────────────────
 async function extractFromImage(buffer, mimeType, language = "auto") {
   const ocrText = await ocrImage(buffer, mimeType);
-  console.log("OCR Text:", ocrText.slice(0, 200));
+  console.log("OCR:", ocrText.slice(0, 200));
   const parsed = await extractFromOCR(ocrText, language);
   if (Array.isArray(parsed)) return parsed.map(cleanResult);
   return cleanResult(parsed);
 }
 
-// ── Front+Back extract ────────────────────────────────────────────────────────
 async function extractFromImages(frontBuf, frontMime, backBuf, backMime) {
-  // OCR dono images parallel mein karo
   const [frontOCR, backOCR] = await Promise.all([
     ocrImage(frontBuf, frontMime),
     ocrImage(backBuf, backMime),
   ]);
-  console.log("Front OCR:", frontOCR.slice(0, 150));
-  console.log("Back OCR:",  backOCR.slice(0, 150));
-
-  const parsed = await extractFromFrontBack(frontOCR, backOCR);
-  return cleanResult(parsed);
+  return cleanResult(await extractFromFrontBack(frontOCR, backOCR));
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ROUTES
 // ══════════════════════════════════════════════════════════════════════════════
 
-// ── POST /api/extract — Single card (front only) ──────────────────────────────
+// ── POST /api/extract — Single card scan + save ───────────────────────────────
 app.post("/api/extract", upload.single("card"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "Koi image upload nahi hui" });
@@ -348,15 +306,21 @@ app.post("/api/extract", upload.single("card"), async (req, res) => {
     const parsed = await extractFromImage(req.file.buffer, req.file.mimetype, language);
 
     if (Array.isArray(parsed)) {
+      // Multiple cards — sab save karo
+      const saved = await Promise.all(parsed.map(data => saveCard(data).catch(() => null)));
       res.json({
         success: true, multiple: true,
         results: parsed.map((data, i) => ({
           filename: `${req.file.originalname} — Card ${i + 1}`,
-          status: "success", data,
+          status: "success",
+          savedId: saved[i]?._id,
+          data,
         })),
       });
     } else {
-      res.json({ success: true, multiple: false, data: parsed });
+      // Single card — save karo
+      const saved = await saveCard(parsed).catch(e => { console.error(e.message); return null; });
+      res.json({ success: true, multiple: false, savedId: saved?._id, data: parsed });
     }
   } catch (err) {
     console.error("Extract error:", err.message);
@@ -364,67 +328,54 @@ app.post("/api/extract", upload.single("card"), async (req, res) => {
   }
 });
 
-// ── POST /api/extract-frontback — Single card (front + back) ─────────────────
-// Frontend se: FormData mein "front" aur "back" fields
+// ── POST /api/extract-frontback — Front+back scan + save ─────────────────────
 app.post("/api/extract-frontback",
-  upload.fields([
-    { name: "front", maxCount: 1 },
-    { name: "back",  maxCount: 1 },
-  ]),
+  upload.fields([{ name: "front", maxCount: 1 }, { name: "back", maxCount: 1 }]),
   async (req, res) => {
     try {
       const frontFile = req.files?.front?.[0];
       const backFile  = req.files?.back?.[0];
+      if (!frontFile) return res.status(400).json({ error: "Front image nahi hui" });
+      if (!backFile)  return res.status(400).json({ error: "Back image nahi hui" });
 
-      if (!frontFile) return res.status(400).json({ error: "Front image upload nahi hui" });
-      if (!backFile)  return res.status(400).json({ error: "Back image upload nahi hui"  });
+      const data  = await extractFromImages(frontFile.buffer, frontFile.mimetype, backFile.buffer, backFile.mimetype);
+      const saved = await saveCard(data).catch(e => { console.error(e.message); return null; });
 
-      const data = await extractFromImages(
-        frontFile.buffer, frontFile.mimetype,
-        backFile.buffer,  backFile.mimetype,
-      );
-
-      res.json({ success: true, data });
+      res.json({ success: true, savedId: saved?._id, data });
     } catch (err) {
-      console.error("FrontBack extract error:", err.message);
+      console.error("FrontBack error:", err.message);
       res.status(500).json({ error: err.message });
     }
   }
 );
 
-// ── POST /api/extract-bulk — Bulk single-side cards ──────────────────────────
+// ── POST /api/extract-bulk — Bulk scan + save ─────────────────────────────────
 app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
   try {
-    if (!req.files || req.files.length === 0)
-      return res.status(400).json({ error: "Koi image upload nahi hui" });
+    if (!req.files?.length) return res.status(400).json({ error: "Koi image nahi hui" });
 
     const language = req.body.language || "auto";
-    const files = req.files;
     const { batchSize, batchDelay } = BATCH_CONFIG[language] || BATCH_CONFIG.auto;
-
-    console.log(`Bulk: ${files.length} cards | Language: ${language} | Batch: ${batchSize}`);
 
     res.setHeader("Content-Type", "application/json");
     res.setHeader("Transfer-Encoding", "chunked");
     res.setHeader("X-Accel-Buffering", "no");
 
-    const results = new Array(files.length);
+    const results = new Array(req.files.length);
 
-    for (let i = 0; i < files.length; i += batchSize) {
-      const batch = files.slice(i, i + batchSize);
+    for (let i = 0; i < req.files.length; i += batchSize) {
       await Promise.all(
-        batch.map(async (file, j) => {
+        req.files.slice(i, i + batchSize).map(async (file, j) => {
           const idx = i + j;
           try {
             const parsed = await extractFromImage(file.buffer, file.mimetype, language);
-            if (Array.isArray(parsed)) {
-              results[idx] = parsed.map((data, k) => ({
-                filename: `${file.originalname} — Card ${k + 1}`,
-                status: "success", data,
-              }));
-            } else {
-              results[idx] = [{ filename: file.originalname, status: "success", data: parsed }];
-            }
+            const dataArr = Array.isArray(parsed) ? parsed : [parsed];
+            // Sab save karo
+            await Promise.all(dataArr.map(d => saveCard(d).catch(() => null)));
+            results[idx] = dataArr.map((data, k) => ({
+              filename: Array.isArray(parsed) ? `${file.originalname} — Card ${k+1}` : file.originalname,
+              status: "success", data,
+            }));
             console.log(`✓ ${file.originalname}`);
           } catch (err) {
             results[idx] = [{ filename: file.originalname, status: "error", error: err.message, data: {} }];
@@ -433,7 +384,7 @@ app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
         })
       );
       res.write(" ");
-      if (i + batchSize < files.length) await delay(batchDelay);
+      if (i + batchSize < req.files.length) await delay(batchDelay);
     }
 
     res.end(JSON.stringify({ success: true, results: results.flat() }));
@@ -442,11 +393,12 @@ app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
   }
 });
 
+// ── GET /api/cards — Saari saved cards ───────────────────────────────────────
+app.get("/api/cards", getAllCards);
+
 // ── GET /api/health ───────────────────────────────────────────────────────────
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", model: OCR_MODEL });
+  res.json({ status: "ok", db: mongoose.connection.readyState === 1 ? "connected" : "disconnected" });
 });
 
-app.listen(PORT, () => {
-  console.log(`Server: http://localhost:${PORT}`);
-});
+app.listen(PORT, () => console.log(`🚀 Server: http://localhost:${PORT}`));
