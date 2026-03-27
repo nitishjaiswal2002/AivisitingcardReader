@@ -21,16 +21,35 @@ const OCR_MODEL       = "mistral-ocr-latest";
 const EXTRACT_MODEL   = "mistral-medium-latest";
 
 // ── PROMPTS ───────────────────────────────────────────────────────────────────
+const CARD_DETECTION_RULES = `
+CARD DETECTION RULES — VERY IMPORTANT:
+- ONE card: Same person/company with multiple contact details → return SINGLE JSON object
+- MULTIPLE cards: Clearly different people/companies with different names → return JSON ARRAY
+
+MERGING RULES:
+1. MULTIPLE ADDRESSES on same card → combine: "Office: 123 ABC Road | Factory: 456 XYZ Nagar"
+2. MULTIPLE EMAILS on same card → comma separated: "info@co.com, sales@co.com"
+3. MULTIPLE PHONES → first in phone field, second in mobile field
+4. Same name/company + multiple addresses = ONE card (merge address)
+5. Different names/companies = MULTIPLE cards (return array)
+6. Do NOT split one card into multiple objects
+7. Do NOT merge different people into one object
+`;
+
 const PROMPTS = {
   english: `You are the world's best business card data extraction specialist.
-Given OCR text from a business card, extract information into JSON.
-
+Given OCR text from a business card image, extract information into JSON.
+${CARD_DETECTION_RULES}
 CRITICAL RULES:
-1. Roman numerals like III, IV, VI — keep as-is
-2. EMAIL: fix domain OCR errors only (grnail→gmail, yarnoo→yahoo)
-3. PHONE: ONLY digits 0-9, +, -, (), space
-4. NAMES: Proper case, keep exact spelling
-5. ONE card → single JSON object. MULTIPLE → JSON array. Return ONLY JSON.
+1. Roman numerals (III, IV, VI) — keep EXACTLY as written
+2. EMAIL: fix domain OCR errors only (grnail→gmail, yarnoo→yahoo, rediffrnail→rediffmail)
+3. Do NOT change email username (before @)
+4. PHONE: ONLY digits 0-9, +, -, (), space — remove any letters
+5. NAMES: Proper case, keep exact spelling
+6. ADDRESS: Extract complete address — building, street, area, city, pincode
+7. City → city field, State → state field separately
+8. Country → "India" if address looks Indian
+9. Return ONLY JSON — no markdown, no explanation
 
 Return ONLY this JSON:
 {
@@ -40,14 +59,20 @@ Return ONLY this JSON:
 }`,
 
   hindi: `You are the world's best business card data extraction specialist for Hindi and English cards.
-Given OCR text from a business card, extract information into JSON.
-
+Given OCR text from a business card image, extract information into JSON.
+${CARD_DETECTION_RULES}
 HINDI RULES:
 - Transliterate Hindi names to English (e.g. "राहुल शर्मा" → "Rahul Sharma")
-- Translate Hindi designations (e.g. "प्रबंधक" → "Manager", "मालिक" → "Owner")
+- Translate Hindi designations (e.g. "प्रबंधक" → "Manager", "मालिक" → "Owner", "निदेशक" → "Director")
+- Translate Hindi company types (e.g. "प्राइवेट लिमिटेड" → "Pvt Ltd")
 - Translate Hindi city/state (e.g. "मुंबई" → "Mumbai", "दिल्ली" → "Delhi")
 
-CRITICAL RULES: Roman numerals — keep as-is. Fix email domains only. Phone: digits only. Return ONLY JSON.
+CRITICAL RULES:
+1. Roman numerals — keep EXACTLY as written
+2. EMAIL: fix domain OCR errors only, do NOT change username
+3. PHONE: ONLY digits 0-9, +, -, (), space
+4. NAMES: Proper case after transliteration
+5. Return ONLY JSON — no markdown, no explanation
 
 Return ONLY this JSON:
 {
@@ -57,19 +82,25 @@ Return ONLY this JSON:
 }`,
 
   auto: `You are the world's best business card data extraction specialist.
-Given OCR text from a business card, extract information into JSON.
+Given OCR text from a business card image, extract information into JSON.
 Card may be in English, Hindi (Devanagari), or mixed.
-
+${CARD_DETECTION_RULES}
 HINDI HANDLING:
-- Transliterate Hindi names to English
-- Translate Hindi designations, city, state to English
+- Transliterate Hindi names to English (e.g. "राहुल शर्मा" → "Rahul Sharma")
+- Translate Hindi designations (e.g. "प्रबंधक" → "Manager", "मालिक" → "Owner")
+- Translate Hindi city/state (e.g. "मुंबई" → "Mumbai", "दिल्ली" → "Delhi")
 
 CRITICAL RULES:
-1. Roman numerals like III, IV — keep EXACTLY as written
-2. Fix email domains only: "grnail"→"gmail", "yarnoo"→"yahoo"
-3. Phone: ONLY digits 0-9, +, -, (), space
-4. Names: Proper case, keep exact spelling
-5. ONE card → single JSON object. MULTIPLE → JSON array. Return ONLY JSON.
+1. Roman numerals (III, IV, VI, IX) — keep EXACTLY as written, never convert
+2. EMAIL: fix domain OCR errors only (grnail→gmail, yarnoo→yahoo, rediffrnail→rediffmail)
+3. Do NOT change email username (before @)
+4. PHONE: ONLY digits 0-9, +, -, (), space
+5. NAMES: Proper case, exact spelling — never autocorrect
+6. COMPANY: Keep original spelling, Roman numerals as-is
+7. ADDRESS: Complete address. City → city field. State → state field. 6-digit Indian pincodes.
+8. Country → "India" if address looks Indian and country not mentioned
+9. SOCIAL: LinkedIn URL/username, Twitter/Instagram handle, WhatsApp number
+10. Return ONLY JSON — no markdown, no explanation
 
 Return ONLY this JSON:
 {
@@ -82,15 +113,21 @@ Return ONLY this JSON:
 const FRONTBACK_PROMPT = `You are the world's best business card data extraction specialist.
 You are given OCR text from BOTH SIDES of a single business card.
 Combine into ONE complete JSON object.
-
-MERGING RULES:
-1. ADDRESS: Merge into one complete address
+${CARD_DETECTION_RULES}
+FRONT+BACK MERGING RULES:
+1. ADDRESS: Merge both sides into one complete address
 2. PHONE/MOBILE: Different numbers → phone and mobile separately
 3. EMAIL: Same → keep one. Different → comma separated
-4. NAME/COMPANY/DESIGNATION: Prefer front side
-5. PRODUCTS: Back side product list → products field
+4. NAME/COMPANY/DESIGNATION: Prefer front side values
+5. PRODUCTS/SERVICES: Back side product list → products field
+6. SOCIAL MEDIA: Back side usually has social links
 
-CRITICAL RULES: Roman numerals as-is. Fix email domains only. Phone digits only. Return ONLY JSON.
+CRITICAL RULES:
+1. Roman numerals — keep EXACTLY as written
+2. EMAIL: fix domain OCR errors only, do NOT change username
+3. PHONE: ONLY digits 0-9, +, -, (), space
+4. Return ONLY ONE JSON object — no array
+5. Return ONLY JSON — no markdown, no explanation
 
 Return ONLY this JSON:
 {
@@ -174,7 +211,7 @@ async function extractFromOCR(ocrText, language = "auto", retries = 3) {
         body: JSON.stringify({
           model: EXTRACT_MODEL,
           messages: [{ role: "user", content: `${prompt}\n\nOCR Text:\n${ocrText}` }],
-          max_tokens: 1200,
+          max_tokens: 1500,
         }),
       });
       clearTimeout(timeout);
@@ -216,7 +253,7 @@ async function extractFromFrontBack(frontOCR, backOCR, retries = 3) {
         body: JSON.stringify({
           model: EXTRACT_MODEL,
           messages: [{ role: "user", content: `${FRONTBACK_PROMPT}\n\n${combinedText}` }],
-          max_tokens: 1200,
+          max_tokens: 1500,
         }),
       });
       clearTimeout(timeout);
@@ -244,19 +281,28 @@ async function extractFromFrontBack(frontOCR, backOCR, retries = 3) {
 
 // ── Clean helpers ─────────────────────────────────────────────────────────────
 const cleanEmail = (val) => {
-  if (!val || typeof val !== "string" || !val.includes("@")) return val;
-  const atIndex = val.lastIndexOf("@");
-  const username = val.substring(0, atIndex);
-  const domain = val.substring(atIndex + 1).toLowerCase();
-  const domainFixes = {
-    "grnail.com": "gmail.com", "gmial.com": "gmail.com", "gmai.com": "gmail.com",
-    "yarnoo.com": "yahoo.com", "yahooo.com": "yahoo.com", "yah00.com": "yahoo.com",
-    "hotrnail.com": "hotmail.com", "hotmai.com": "hotmail.com",
-    "rediffrnail.com": "rediffmail.com", "redifmail.com": "rediffmail.com",
-    "icloud.corn": "icloud.com", "gmail.corn": "gmail.com",
-    "yahoo.corn": "yahoo.com", "hotmail.corn": "hotmail.com",
-  };
-  return `${username}@${domainFixes[domain] || domain}`;
+  if (!val || typeof val !== "string") return val;
+
+  // Multiple emails handle karo
+  const emails = val.split(",").map(e => e.trim()).filter(Boolean);
+  const cleaned = emails.map(email => {
+    if (!email.includes("@")) return email;
+    const atIndex = email.lastIndexOf("@");
+    const username = email.substring(0, atIndex);
+    const domain = email.substring(atIndex + 1).toLowerCase();
+    const domainFixes = {
+      "grnail.com": "gmail.com", "gmial.com": "gmail.com", "gmai.com": "gmail.com",
+      "yarnoo.com": "yahoo.com", "yahooo.com": "yahoo.com", "yah00.com": "yahoo.com",
+      "hotrnail.com": "hotmail.com", "hotmai.com": "hotmail.com",
+      "rediffrnail.com": "rediffmail.com", "redifmail.com": "rediffmail.com",
+      "icloud.corn": "icloud.com", "gmail.corn": "gmail.com",
+      "yahoo.corn": "yahoo.com", "hotmail.corn": "hotmail.com",
+    };
+    return `${username}@${domainFixes[domain] || domain}`;
+  });
+  // Duplicates remove karo
+  const unique = [...new Set(cleaned)];
+  return unique.join(", ");
 };
 
 const cleanPhone = (val) => {
@@ -267,6 +313,14 @@ const cleanPhone = (val) => {
     .trim();
 };
 
+const cleanAddress = (val) => {
+  if (!val || typeof val !== "string") return val;
+  // Duplicate address parts remove karo
+  const parts = val.split("|").map(p => p.trim()).filter(Boolean);
+  const unique = [...new Set(parts)];
+  return unique.join(" | ");
+};
+
 const cleanResult = (obj) => {
   if (!obj || typeof obj !== "object") return obj;
   return {
@@ -275,6 +329,7 @@ const cleanResult = (obj) => {
     phone:    cleanPhone(obj.phone),
     mobile:   cleanPhone(obj.mobile),
     whatsapp: cleanPhone(obj.whatsapp),
+    address:  cleanAddress(obj.address),
   };
 };
 
@@ -298,7 +353,7 @@ async function extractFromImages(frontBuf, frontMime, backBuf, backMime) {
 // ROUTES
 // ══════════════════════════════════════════════════════════════════════════════
 
-// ── POST /api/extract — Single card scan + save ───────────────────────────────
+// ── POST /api/extract ─────────────────────────────────────────────────────────
 app.post("/api/extract", upload.single("card"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "Koi image upload nahi hui" });
@@ -306,7 +361,6 @@ app.post("/api/extract", upload.single("card"), async (req, res) => {
     const parsed = await extractFromImage(req.file.buffer, req.file.mimetype, language);
 
     if (Array.isArray(parsed)) {
-      // Multiple cards — sab save karo
       const saved = await Promise.all(parsed.map(data => saveCard(data).catch(() => null)));
       res.json({
         success: true, multiple: true,
@@ -318,7 +372,6 @@ app.post("/api/extract", upload.single("card"), async (req, res) => {
         })),
       });
     } else {
-      // Single card — save karo
       const saved = await saveCard(parsed).catch(e => { console.error(e.message); return null; });
       res.json({ success: true, multiple: false, savedId: saved?._id, data: parsed });
     }
@@ -328,7 +381,7 @@ app.post("/api/extract", upload.single("card"), async (req, res) => {
   }
 });
 
-// ── POST /api/extract-frontback — Front+back scan + save ─────────────────────
+// ── POST /api/extract-frontback ───────────────────────────────────────────────
 app.post("/api/extract-frontback",
   upload.fields([{ name: "front", maxCount: 1 }, { name: "back", maxCount: 1 }]),
   async (req, res) => {
@@ -349,7 +402,7 @@ app.post("/api/extract-frontback",
   }
 );
 
-// ── POST /api/extract-bulk — Bulk scan + save ─────────────────────────────────
+// ── POST /api/extract-bulk ────────────────────────────────────────────────────
 app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
   try {
     if (!req.files?.length) return res.status(400).json({ error: "Koi image nahi hui" });
@@ -370,11 +423,13 @@ app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
           try {
             const parsed = await extractFromImage(file.buffer, file.mimetype, language);
             const dataArr = Array.isArray(parsed) ? parsed : [parsed];
-            // Sab save karo
             await Promise.all(dataArr.map(d => saveCard(d).catch(() => null)));
             results[idx] = dataArr.map((data, k) => ({
-              filename: Array.isArray(parsed) ? `${file.originalname} — Card ${k+1}` : file.originalname,
-              status: "success", data,
+              filename: Array.isArray(parsed)
+                ? `${file.originalname} — Card ${k + 1}`
+                : file.originalname,
+              status: "success",
+              data,
             }));
             console.log(`✓ ${file.originalname}`);
           } catch (err) {
@@ -393,7 +448,7 @@ app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
   }
 });
 
-// ── GET /api/cards — Saari saved cards ───────────────────────────────────────
+// ── GET /api/cards ────────────────────────────────────────────────────────────
 app.get("/api/cards", getAllCards);
 
 // ── GET /api/health ───────────────────────────────────────────────────────────
