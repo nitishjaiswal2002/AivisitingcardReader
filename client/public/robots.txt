@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://visiting-card-frontend.onrender.com/sitemap.xml
