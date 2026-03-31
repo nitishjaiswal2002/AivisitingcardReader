@@ -5,6 +5,8 @@ import Header from "./components/Header";
 import Footer from "./components/Footer";
 import HowItWorks from "./components/HowItWorks";
 import Testimonials from "./components/Testimonials";
+import WhatsAppButton from "./components/WhatsAppButton";
+import FAQ from "./components/FAQ";
 import "./App.css";
 
 function App() {
@@ -177,11 +179,14 @@ function App() {
           <Testimonials />
         </div>
 
-        <div id="faq" />
+        <div id="faq">
+         <FAQ />
+          </div>
 
       </main>
 
       <Footer />
+      <WhatsAppButton/>
     </div>
   );
 }
