@@ -186,6 +186,7 @@ function App() {
       </main>
 
       <Footer />
+      <WhatsAppButton/>
     </div>
   );
 }

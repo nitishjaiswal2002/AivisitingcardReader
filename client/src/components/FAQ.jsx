@@ -18,7 +18,7 @@ const faqs = [
     icon: "📁",
     question: "CSV aur Excel mein export kaise kare?",
     answer:
-      "Data extract hone ke baad Results table ke neeche 'Download CSV' ya 'Download Excel' button dikhega. Ek click mein saari details spreadsheet mein save ho jayengi — seedha Excel ya Google Sheets mein khol sakte ho.",
+      "Data extract hone ke baad Results table ke upar 'Download CSV' ya 'Download Excel' button dikhega. Ek click mein saari details spreadsheet mein save ho jayengi — seedha Excel ya Google Sheets mein khol sakte ho.",
   },
   {
     icon: "📦",
@@ -73,7 +73,7 @@ export default function FAQ() {
     <section className="faq-section" id="faq">
       <div className="faq-header">
         <span className="faq-badge">FAQ</span>
-        <h2 className="faq-title">Aksar Puche Jaane Wale Sawaal</h2>
+        <h2 className="faq-title">Frequently Asked Questions</h2>
         <p className="faq-subtitle">
           Visiting Card Scanner ke baare mein aapke saare sawaalon ke jawaab yahan hain
         </p>
