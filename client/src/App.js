@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route } from "react-router";
 import UploadSection from "./components/UploadSection";
 import ResultsTable from "./components/ResultsTable";
 import Header from "./components/Header";
