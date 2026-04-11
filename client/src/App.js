@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import UploadSection from "./components/UploadSection";
 import ResultsTable from "./components/ResultsTable";
 import Header from "./components/Header";
@@ -7,9 +8,14 @@ import HowItWorks from "./components/HowItWorks";
 import Testimonials from "./components/Testimonials";
 import WhatsAppButton from "./components/WhatsAppButton";
 import FAQ from "./components/FAQ";
+import TermsAndConditions from "./components/TermsAndConditions";
+import RefundPolicy from "./components/RefundPolicy";
+import PrivacyPolicy from "./components/PrivacyPolicy";
+
 import "./App.css";
 
-function App() {
+// ── Main home page content ──
+function HomePage() {
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -46,27 +52,146 @@ function App() {
   };
 
   const handleInstall = () => {
-    if (installPrompt) {
-      installPrompt.prompt();
-    }
+    if (installPrompt) installPrompt.prompt();
   };
 
   useEffect(() => {
-    // ── 1. Install prompt (Android/Chrome) ──
     window.addEventListener("beforeinstallprompt", (e) => {
       e.preventDefault();
       setInstallPrompt(e);
     });
-
-    // ── 2. iOS detect ──
     const ios = /iPad|iPhone|iPod/.test(navigator.userAgent);
     setIsIOS(ios);
-
-    // ── 3. Installed app detect ──
     const mq = window.matchMedia("(display-mode: standalone)");
     setIsInstalled(mq.matches);
     mq.addEventListener("change", (e) => setIsInstalled(e.matches));
   }, []);
+
+  // Upload + toggles block (shared between installed/browser mode)
+  const uploadBlock = (
+    <div id="upload" className="upload-box">
+      <div className="toggles-wrap">
+
+        {/* Card Mode */}
+        <div className="lang-toggle-wrap">
+          <span className="lang-label">Card Mode:</span>
+          <div className="mode-toggle">
+            <button
+              className={`mode-btn ${mode === "single" ? "active" : ""}`}
+              onClick={() => handleModeChange("single")}
+            >
+              Single Card
+            </button>
+            <button
+              className={`mode-btn ${mode === "bulk" ? "active" : ""}`}
+              onClick={() => handleModeChange("bulk")}
+            >
+              Bulk Upload
+            </button>
+          </div>
+        </div>
+
+        {/* Card Side — Single */}
+        {mode === "single" && (
+          <div className="lang-toggle-wrap">
+            <span className="lang-label">Card Side:</span>
+            <div className="lang-toggle">
+              <button
+                className={`lang-btn ${cardSide === "front" ? "active" : ""}`}
+                onClick={() => handleCardSideChange("front")}
+              >
+                🃏 Only Front
+              </button>
+              <button
+                className={`lang-btn ${cardSide === "frontback" ? "active" : ""}`}
+                onClick={() => handleCardSideChange("frontback")}
+              >
+                🔄 Front + Back
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Card Side — Bulk */}
+        {mode === "bulk" && (
+          <div className="lang-toggle-wrap">
+            <span className="lang-label">Card Side:</span>
+            <div className="lang-toggle">
+              <button
+                className={`lang-btn ${bulkCardSide === "single" ? "active" : ""}`}
+                onClick={() => handleBulkCardSideChange("single")}
+              >
+                🃏 Single Side
+              </button>
+              <button
+                className={`lang-btn ${bulkCardSide === "frontback" ? "active" : ""}`}
+                onClick={() => handleBulkCardSideChange("frontback")}
+              >
+                🔄 Front + Back
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Language */}
+        <div className="lang-toggle-wrap">
+          <span className="lang-label">Card Language:</span>
+          <div className="lang-toggle">
+            <button
+              className={`lang-btn ${language === "auto" ? "active" : ""}`}
+              onClick={() => setLanguage("auto")}
+            >
+              🌐 Auto Detect
+            </button>
+            <button
+              className={`lang-btn ${language === "english" ? "active" : ""}`}
+              onClick={() => setLanguage("english")}
+            >
+              English
+            </button>
+            <button
+              className={`lang-btn ${language === "hindi" ? "active" : ""}`}
+              onClick={() => setLanguage("hindi")}
+            >
+              Hindi
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <UploadSection
+        mode={mode}
+        cardSide={cardSide}
+        bulkCardSide={bulkCardSide}
+        language={language}
+        setLoading={setLoading}
+        setError={setError}
+        onResults={handleResults}
+      />
+
+      {error && (
+        <div className="error-box">
+          <span>⚠️</span> {error}
+        </div>
+      )}
+
+      {loading && (
+        <div className="loading-box">
+          <div className="spinner" />
+          <span>
+            {language === "hindi"
+              ? "AI आपका हिंदी कार्ड पढ़ रहा है..."
+              : "AI is reading your visiting card..."}
+          </span>
+        </div>
+      )}
+
+      {results.length > 0 && !loading && (
+        <ResultsTable results={results} onClear={clearAll} />
+      )}
+    </div>
+  );
 
   return (
     <div className="app">
@@ -90,279 +215,46 @@ function App() {
       )}
 
       <main className="main-content">
-
         {isInstalled ? (
-
-          /* ── INSTALLED APP MODE — sirf upload + results ── */
-          <div id="upload" className="upload-box">
-            <div className="toggles-wrap">
-
-              {/* Card Mode — Single / Bulk */}
-              <div className="lang-toggle-wrap">
-                <span className="lang-label">Card Mode:</span>
-                <div className="mode-toggle">
-                  <button
-                    className={`mode-btn ${mode === "single" ? "active" : ""}`}
-                    onClick={() => handleModeChange("single")}
-                  >
-                    Single Card
-                  </button>
-                  <button
-                    className={`mode-btn ${mode === "bulk" ? "active" : ""}`}
-                    onClick={() => handleModeChange("bulk")}
-                  >
-                    Bulk Upload
-                  </button>
-                </div>
-              </div>
-
-              {/* Card Side — Single mode */}
-              {mode === "single" && (
-                <div className="lang-toggle-wrap">
-                  <span className="lang-label">Card Side:</span>
-                  <div className="lang-toggle">
-                    <button
-                      className={`lang-btn ${cardSide === "front" ? "active" : ""}`}
-                      onClick={() => handleCardSideChange("front")}
-                    >
-                      🃏 Only Front
-                    </button>
-                    <button
-                      className={`lang-btn ${cardSide === "frontback" ? "active" : ""}`}
-                      onClick={() => handleCardSideChange("frontback")}
-                    >
-                      🔄 Front + Back
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Card Side — Bulk mode */}
-              {mode === "bulk" && (
-                <div className="lang-toggle-wrap">
-                  <span className="lang-label">Card Side:</span>
-                  <div className="lang-toggle">
-                    <button
-                      className={`lang-btn ${bulkCardSide === "single" ? "active" : ""}`}
-                      onClick={() => handleBulkCardSideChange("single")}
-                    >
-                      🃏 Single Side
-                    </button>
-                    <button
-                      className={`lang-btn ${bulkCardSide === "frontback" ? "active" : ""}`}
-                      onClick={() => handleBulkCardSideChange("frontback")}
-                    >
-                      🔄 Front + Back
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Card Language */}
-              <div className="lang-toggle-wrap">
-                <span className="lang-label">Card Language:</span>
-                <div className="lang-toggle">
-                  <button
-                    className={`lang-btn ${language === "auto" ? "active" : ""}`}
-                    onClick={() => setLanguage("auto")}
-                  >
-                    🌐 Auto Detect
-                  </button>
-                  <button
-                    className={`lang-btn ${language === "english" ? "active" : ""}`}
-                    onClick={() => setLanguage("english")}
-                  >
-                    English
-                  </button>
-                  <button
-                    className={`lang-btn ${language === "hindi" ? "active" : ""}`}
-                    onClick={() => setLanguage("hindi")}
-                  >
-                    Hindi
-                  </button>
-                </div>
-              </div>
-
-            </div>
-
-            <UploadSection
-              mode={mode}
-              cardSide={cardSide}
-              bulkCardSide={bulkCardSide}
-              language={language}
-              setLoading={setLoading}
-              setError={setError}
-              onResults={handleResults}
-            />
-
-            {error && (
-              <div className="error-box">
-                <span>⚠️</span> {error}
-              </div>
-            )}
-
-            {loading && (
-              <div className="loading-box">
-                <div className="spinner" />
-                <span>
-                  {language === "hindi"
-                    ? "AI आपका हिंदी कार्ड पढ़ रहा है..."
-                    : "AI is reading your visiting card..."}
-                </span>
-              </div>
-            )}
-
-            {results.length > 0 && !loading && (
-              <ResultsTable results={results} onClear={clearAll} />
-            )}
-          </div>
-
+          // Installed app: sirf upload
+          uploadBlock
         ) : (
-
-          /* ── BROWSER MODE — poora website ── */
+          // Browser: poora website
           <>
             <div id="how-it-works">
               <HowItWorks />
             </div>
-
-            <div id="upload" className="upload-box">
-              <div className="toggles-wrap">
-
-                {/* Card Mode — Single / Bulk */}
-                <div className="lang-toggle-wrap">
-                  <span className="lang-label">Card Mode:</span>
-                  <div className="mode-toggle">
-                    <button
-                      className={`mode-btn ${mode === "single" ? "active" : ""}`}
-                      onClick={() => handleModeChange("single")}
-                    >
-                      Single Card
-                    </button>
-                    <button
-                      className={`mode-btn ${mode === "bulk" ? "active" : ""}`}
-                      onClick={() => handleModeChange("bulk")}
-                    >
-                      Bulk Upload
-                    </button>
-                  </div>
-                </div>
-
-                {/* Card Side — Single mode */}
-                {mode === "single" && (
-                  <div className="lang-toggle-wrap">
-                    <span className="lang-label">Card Side:</span>
-                    <div className="lang-toggle">
-                      <button
-                        className={`lang-btn ${cardSide === "front" ? "active" : ""}`}
-                        onClick={() => handleCardSideChange("front")}
-                      >
-                        🃏 Only Front
-                      </button>
-                      <button
-                        className={`lang-btn ${cardSide === "frontback" ? "active" : ""}`}
-                        onClick={() => handleCardSideChange("frontback")}
-                      >
-                        🔄 Front + Back
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Card Side — Bulk mode */}
-                {mode === "bulk" && (
-                  <div className="lang-toggle-wrap">
-                    <span className="lang-label">Card Side:</span>
-                    <div className="lang-toggle">
-                      <button
-                        className={`lang-btn ${bulkCardSide === "single" ? "active" : ""}`}
-                        onClick={() => handleBulkCardSideChange("single")}
-                      >
-                        🃏 Single Side
-                      </button>
-                      <button
-                        className={`lang-btn ${bulkCardSide === "frontback" ? "active" : ""}`}
-                        onClick={() => handleBulkCardSideChange("frontback")}
-                      >
-                        🔄 Front + Back
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Card Language */}
-                <div className="lang-toggle-wrap">
-                  <span className="lang-label">Card Language:</span>
-                  <div className="lang-toggle">
-                    <button
-                      className={`lang-btn ${language === "auto" ? "active" : ""}`}
-                      onClick={() => setLanguage("auto")}
-                    >
-                      🌐 Auto Detect
-                    </button>
-                    <button
-                      className={`lang-btn ${language === "english" ? "active" : ""}`}
-                      onClick={() => setLanguage("english")}
-                    >
-                      English
-                    </button>
-                    <button
-                      className={`lang-btn ${language === "hindi" ? "active" : ""}`}
-                      onClick={() => setLanguage("hindi")}
-                    >
-                      Hindi
-                    </button>
-                  </div>
-                </div>
-
-              </div>
-
-              <UploadSection
-                mode={mode}
-                cardSide={cardSide}
-                bulkCardSide={bulkCardSide}
-                language={language}
-                setLoading={setLoading}
-                setError={setError}
-                onResults={handleResults}
-              />
-
-              {error && (
-                <div className="error-box">
-                  <span>⚠️</span> {error}
-                </div>
-              )}
-
-              {loading && (
-                <div className="loading-box">
-                  <div className="spinner" />
-                  <span>
-                    {language === "hindi"
-                      ? "AI आपका हिंदी कार्ड पढ़ रहा है..."
-                      : "AI is reading your visiting card..."}
-                  </span>
-                </div>
-              )}
-
-              {results.length > 0 && !loading && (
-                <ResultsTable results={results} onClear={clearAll} />
-              )}
-            </div>
-
+            {uploadBlock}
             <div id="testimonials">
               <Testimonials />
             </div>
-
             <div id="faq">
               <FAQ />
             </div>
           </>
         )}
-
       </main>
 
       <Footer />
       <WhatsAppButton />
     </div>
+  );
+}
+
+// ── App root — Router wraps everything ──
+function App() {
+  return (
+    <Router>
+      <Routes>
+        {/* Home page */}
+        <Route path="/" element={<HomePage />} />
+
+        {/* Policy pages — alag page, apna Header/Footer nahi */}
+        <Route path="/privacy-policy"       element={<PrivacyPolicy />} />
+        <Route path="/terms-and-conditions" element={<TermsAndConditions />} />
+        <Route path="/refund-policy"        element={<RefundPolicy />} />
+      </Routes>
+    </Router>
   );
 }
 
