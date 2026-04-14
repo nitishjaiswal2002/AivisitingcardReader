@@ -221,10 +221,11 @@ function HomePage() {
         ) : (
           // Browser: poora website
           <>
+            
+            {uploadBlock}
             <div id="how-it-works">
               <HowItWorks />
             </div>
-            {uploadBlock}
             <div id="testimonials">
               <Testimonials />
             </div>
