@@ -31,7 +31,8 @@ const compressImage = (file) => {
   });
 };
 
-function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, setError, onResults }) {
+function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, setError, onResults,userEmail,onPaywallNeeded,    // ← NEW: jab 402 aaye
+  onLoginNeeded, }) {
   const [dragOver, setDragOver]         = useState(false);
   const [previews, setPreviews]         = useState([]);
   const [files, setFiles]               = useState([]);
@@ -44,6 +45,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
   const [frontPreview, setFrontPreview] = useState(null);
   const [backPreview, setBackPreview]   = useState(null);
   const [bulkItems, setBulkItems]       = useState([]);
+
 
   const lastClickRef   = useRef(0);
   const intervalRef    = useRef(null);
@@ -171,8 +173,13 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
   };
 
   const handleExtract = useCallback(async () => {
+  
+    if(!userEmail){
+      onLoginNeeded();
+      return
+    }
+  
     const now = Date.now();
-
     // Countdown throttle
     if (now - lastClickRef.current < 60000) {
       const remaining = Math.ceil((60000 - (now - lastClickRef.current)) / 1000);
@@ -218,6 +225,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
         const formData = new FormData();
         formData.append("card", files[0]);
         formData.append("language", language);
+        formData.append("email",userEmail);
 
         console.log("Calling:", `${BASE_URL}/api/extract`);
         const res = await axios.post(`${BASE_URL}/api/extract`, formData, {
@@ -237,6 +245,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
         formData.append("front", frontFile);
         formData.append("back", backFile);
         formData.append("language", language);
+        formData.append("email",userEmail);
 
         console.log("Calling:", `${BASE_URL}/api/extract-frontback`);
         const res = await axios.post(`${BASE_URL}/api/extract-frontback`, formData, {
@@ -253,6 +262,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
         const formData = new FormData();
         files.forEach((f) => formData.append("cards", f));
         formData.append("language", language);
+        formData.append("email",userEmail);
 
         console.log("Calling:", `${BASE_URL}/api/extract-bulk`);
         const response = await fetch(`${BASE_URL}/api/extract-bulk`, {
@@ -279,6 +289,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
             formData.append("front", front.file);
             formData.append("back", back.file);
             formData.append("language", language);
+            formData.append("email",userEmail);
 
             console.log("Calling pair:", `${BASE_URL}/api/extract-frontback`);
             const res = await axios.post(`${BASE_URL}/api/extract-frontback`, formData, {
@@ -301,6 +312,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
           const formData = new FormData();
           singleCards.forEach((item) => formData.append("cards", item.file));
           formData.append("language", language);
+          formData.append("email",userEmail);
           try {
             const response = await fetch(`${BASE_URL}/api/extract-bulk`, { method: "POST", body: formData });
             const data = await response.json();
@@ -317,23 +329,34 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
 
     } catch (err) {
       console.error("Extract error:", err);
-      const msg = err.response?.data?.error || err.message || "";
-      if (msg.includes("404")) {
-        setError(`❌ Route not found — Check REACT_APP_API_URL in .env (current: ${BASE_URL})`);
-      } else if (msg.includes("429") || msg.includes("rate_limited")) {
-        setError("⏳ Abhi bahut requests aa rahi hain — 1 minute baad dobara try karo");
-      } else if (msg.includes("timeout") || msg.includes("ECONNABORTED")) {
-        setError("⏳ Request timeout — dobara try karo");
-      } else if (msg.includes("Network Error") || msg.includes("ERR_CONNECTION_REFUSED")) {
-        setError(`❌ Server se connect nahi ho paya — kya server ${BASE_URL} pe chal raha hai?`);
-      } else {
-        setError(msg || "Server se connect nahi ho paya");
-      }
+  const status  = err.response?.status;
+  const errData = err.response?.data;
+  const msg     = errData?.error || err.message || "";
+
+  if (status === 402 || errData?.showPaywall) {
+    onPaywallNeeded(errData?.message || "Free trial complete — Premium lo!");
+    return;
+  }
+  if (status === 401 || errData?.code === "AUTH_REQUIRED") {
+    onLoginNeeded();
+    return;
+  }
+  if (msg.includes("404")) {
+    setError(`❌ Route not found — Check REACT_APP_API_URL in .env (current: ${BASE_URL})`);
+  } else if (msg.includes("429") || msg.includes("rate_limited")) {
+    setError("⏳ Abhi bahut requests aa rahi hain — 1 minute baad dobara try karo");
+  } else if (msg.includes("timeout") || msg.includes("ECONNABORTED")) {
+    setError("⏳ Request timeout — dobara try karo");
+  } else if (msg.includes("Network Error") || msg.includes("ERR_CONNECTION_REFUSED")) {
+    setError(`❌ Server se connect nahi ho paya — kya server ${BASE_URL} pe chal raha hai?`);
+  } else {
+    setError(msg || "Server se connect nahi ho paya");
+  }
     } finally {
       setLoading(false);
       setIsProcessing(false);
     }
-  }, [files, frontFile, backFile, cardSide, bulkCardSide, bulkItems, mode, language, setLoading, setError, onResults, isProcessing]);
+  }, [files, frontFile, backFile, cardSide, bulkCardSide, bulkItems, mode, language,userEmail, setLoading, setError, onResults,onLoginNeeded,onPaywallNeeded,isProcessing]);
 
   const removeFile = (index) => {
     setFiles(files.filter((_, i) => i !== index));
