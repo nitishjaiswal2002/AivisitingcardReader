@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import UploadSection from "./components/UploadSection";
 import ResultsTable from "./components/ResultsTable";
 import Header from "./components/Header";
@@ -11,6 +11,9 @@ import FAQ from "./components/FAQ";
 import TermsAndConditions from "./components/TermsAndConditions";
 import RefundPolicy from "./components/RefundPolicy";
 import PrivacyPolicy from "./components/PrivacyPolicy";
+import LoginModal from "./components/LoginModal";
+import PaywallModal from "./components/Paywallmodal";
+import PaymentSuccess from "./components/PaymentSuccess";
 
 import "./App.css";
 
@@ -26,8 +29,40 @@ function HomePage() {
   const [installPrompt, setInstallPrompt] = useState(null);
   const [isIOS, setIsIOS] = useState(false);
   const [isInstalled, setIsInstalled] = useState(false);
+  const [user,setUser]=useState(null);
+  const [showLogin,setShowLogin]=useState(false);
+  const [showPaywall,setShowPaywall]=useState(false);
+  const [showSuccess,setShowSuccess]=useState(null);
+
 
   const handleResults = (data) => setResults(data);
+
+  const handleLogin =(userData)=>{
+    setUser(userData);
+    localStorage.setItem("cardscanner_user",JSON.stringify(userData));
+    setShowLogin(false);
+  }
+
+
+  const handleLogout=()=>{
+    setUser(null);
+    localStorage.removeItem("cardscanner_user");
+  }
+
+  const handlePaywallNeeded=(msg)=>{
+    setError(msg);
+    setShowPaywall(true);
+  }
+
+  const handlePaymentSuccess=(updatedUser,message)=>{
+ setUser(updatedUser);
+ localStorage.setItem("cardscanner_user",JSON.stringify(updatedUser));
+ setShowPaywall(false);
+ setShowSuccess({user:updatedUser,message});
+  }
+
+
+
 
   const clearAll = () => {
     setResults([]);
@@ -65,11 +100,45 @@ function HomePage() {
     const mq = window.matchMedia("(display-mode: standalone)");
     setIsInstalled(mq.matches);
     mq.addEventListener("change", (e) => setIsInstalled(e.matches));
+
+    // Saved user load karo
+    const saved = localStorage.getItem("cardscanner_user");
+    if (saved) {
+     try {
+    const parsed = JSON.parse(saved);
+    setUser(parsed);
+    // Server se refresh
+    fetch(`${process.env.REACT_APP_API_URL || "http://localhost:5000"}/api/user/status?email=${encodeURIComponent(parsed.email)}`)
+      .then(r => r.json())
+      .then(d => { if (d.success) { setUser(d.user); localStorage.setItem("cardscanner_user", JSON.stringify(d.user)); } })
+      .catch(() => {});
+  } catch {}
+}
   }, []);
 
   // Upload + toggles block (shared between installed/browser mode)
   const uploadBlock = (
     <div id="upload" className="upload-box">
+
+     {/*userBar*/}
+      {user ? (
+         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 14px", background:"#f0f9ff", border:"1px solid #bae6fd", borderRadius:10, marginBottom:10, fontSize:14, color:"#0369a1" }}>
+    <span>👤 <strong>{user.name}</strong> · {user.email} · {user.isPremium ? `💎 ${user.scansRemaining} scans` : `🆓 ${user.freeScansLeft} free left`}</span>
+    <button onClick={handleLogout} style={{ background:"none", border:"1px solid #0369a1", color:"#0369a1", borderRadius:6, padding:"4px 12px", fontSize:12, cursor:"pointer" }}>Logout</button>
+  </div>
+      ):(
+         <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 14px", background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:10, marginBottom:12, fontSize:14, color:"#166534" }}>
+    <span>📋 Login karo — 5 free scans milenge!</span>
+    <button onClick={() => setShowLogin(true)} style={{ background:"#16a34a", color:"#fff", border:"none", borderRadius:8, padding:"7px 16px", fontSize:13, fontWeight:600, cursor:"pointer" }}>Login / Register</button>
+     </div>
+      )
+
+      }
+
+
+
+
+
       <div className="toggles-wrap">
 
         {/* Card Mode */}
@@ -165,9 +234,12 @@ function HomePage() {
         cardSide={cardSide}
         bulkCardSide={bulkCardSide}
         language={language}
+        userEmail={user?.email}
         setLoading={setLoading}
         setError={setError}
         onResults={handleResults}
+        onPaywallNeeded={handlePaywallNeeded}
+        onLoginNeeded={()=>setShowLogin(true)}
       />
 
       {error && (
@@ -237,6 +309,16 @@ function HomePage() {
       </main>
 
       <Footer />
+      {showLogin && (
+  <LoginModal onLogin={handleLogin} onClose={() => setShowLogin(false)} />
+)}
+{showPaywall && user && (
+  <PaywallModal user={user} onSuccess={handlePaymentSuccess} onClose={() => setShowPaywall(false)} />
+)}
+{showSuccess && (
+  <PaymentSuccess user={showSuccess.user} message={showSuccess.message} onClose={() => setShowSuccess(null)} />
+)}
+
       <WhatsAppButton />
     </div>
   );
@@ -254,6 +336,7 @@ function App() {
         <Route path="/privacy-policy"       element={<PrivacyPolicy />} />
         <Route path="/terms-and-conditions" element={<TermsAndConditions />} />
         <Route path="/refund-policy"        element={<RefundPolicy />} />
+        <Route path="/payment/status" element={<PaymentSuccess />} />
       </Routes>
     </Router>
   );
