@@ -4,8 +4,30 @@ import multer from "multer";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
 import { saveCard, getAllCards } from "./Controller/cardController.js";
+// Top pe add karo
+import { User } from "./Models/User.js"; // ✅
+import crypto from "crypto";
+
+
 
 dotenv.config();
+
+const CF_BASE    = process.env.CF_BASE_URL || "https://sandbox.cashfree.com";
+const CF_VERSION = "2023-08-01";
+const CF_APP_ID  = process.env.CASHFREE_APP_ID;
+const CF_SECRET  = process.env.CASHFREE_SECRET_KEY;
+
+const PLANS = {
+  pack_10:  {Label: "Starter",  amount:8, scans:10},
+  pack_25:  { label: "Popular",   amount: 20,   scans: 25  },
+  pack_50:   { label: "Pro",       amount: 40,  scans: 50 },
+  unlimited: { label: "Unlimited", amount: 200,  scans: 999999 },
+};
+
+
+
+
+
 
 if (!process.env.MONGO_URI) throw new Error("❌ MONGO_URI missing in .env");
 
@@ -50,6 +72,9 @@ CRITICAL RULES:
 7. City → city field, State → state field separately
 8. Country → "India" if address looks Indian
 9. Return ONLY JSON — no markdown, no explanation
+10. BLANK FIELDS: Agar koi field card pe nahi hai → us field ko JSON mein BILKUL MAT LIKHO
+11. Sirf woh fields return karo jo actually card pe hain
+12. Empty string "" mat dalna — field hi hata do
 
 Return ONLY this JSON:
 {
@@ -101,6 +126,9 @@ CRITICAL RULES:
 8. Country → "India" if address looks Indian and country not mentioned
 9. SOCIAL: LinkedIn URL/username, Twitter/Instagram handle, WhatsApp number
 10. Return ONLY JSON — no markdown, no explanation
+11. BLANK FIELDS: Agar koi field card pe nahi hai → us field ko JSON mein BILKUL MAT LIKHO
+12. Sirf woh fields return karo jo actually card pe hain
+13. Empty string "" mat dalna — field hi hata do
 
 Return ONLY this JSON:
 {
@@ -128,6 +156,9 @@ CRITICAL RULES:
 3. PHONE: ONLY digits 0-9, +, -, (), space
 4. Return ONLY ONE JSON object — no array
 5. Return ONLY JSON — no markdown, no explanation
+6. BLANK FIELDS: Agar koi field card pe nahi hai → us field ko JSON mein BILKUL MAT LIKHO
+7. Sirf woh fields return karo jo actually card pe hain
+8. Empty string "" mat dalna — field hi hata do
 
 Return ONLY this JSON:
 {
@@ -154,6 +185,55 @@ const upload = multer({
 app.use(cors({ origin: "*", methods: ["GET", "POST"], allowedHeaders: ["Content-Type"] }));
 app.use(express.json());
 
+// SCAN quota middleware
+const checkScanQuota = async (req, res, next)=>{
+  try{
+    const email = req.body.email || req.query.email;
+    if(!email) return res.status(401).json({
+      error: "Login required", code: "AUTH_REQUIRED",
+      message : "Pehle apna email enter karo",
+    });
+    const user = await User.findOne({email});
+    if(!user) return res.status(404).json({
+      error:"User not found", code:"USER_NOT_FOUND",
+      message:"Email register nahi hai",
+    });
+
+    let scanCount=1;
+    if(req.files){
+      if(Array.isArray(req.files)) scanCount = req.files.length;
+      else if (req.files.cards)    scanCount=req.files.cards.length;
+    }
+
+    const status=user.canScan(scanCount);
+    if(!status.allowed){
+      if(status.reason === "excited")
+        return res.status(402).json({
+      error:"Premium expired", showPaywall:true,
+     message:"Aapka unlimited plan expire ho gya.",
+      });
+      return res.status(402).json({
+        error :"Scan limit reached", showPaywall:true,
+        message: status.reason === "exhausted"
+        ? "Aapka 5 free scans complete ho gaye. Premium lo!"
+        : "Aapke scans khatam ho gaye",
+      })
+    } 
+    req.scanUser=user;
+    req.scanCount=scanCount;
+    next();
+  }
+  catch(err) {res.status(500).json({error:err.message});}
+};
+
+const deductAfterScan = async (req) => {
+  if(!req.scanUser) return;
+  req.scanUser.deductScan(req.scanCount || 1);
+  await req.scanUser.save();
+};
+
+
+// Delay in Uploading PIC
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const RENDER_URL = process.env.RENDER_EXTERNAL_URL;
@@ -280,10 +360,9 @@ async function extractFromFrontBack(frontOCR, backOCR, retries = 3) {
 }
 
 // ── Clean helpers ─────────────────────────────────────────────────────────────
+// ── Clean helpers ─────────────────────────────────────────────────────────────
 const cleanEmail = (val) => {
   if (!val || typeof val !== "string") return val;
-
-  // Multiple emails handle karo
   const emails = val.split(",").map(e => e.trim()).filter(Boolean);
   const cleaned = emails.map(email => {
     if (!email.includes("@")) return email;
@@ -300,7 +379,6 @@ const cleanEmail = (val) => {
     };
     return `${username}@${domainFixes[domain] || domain}`;
   });
-  // Duplicates remove karo
   const unique = [...new Set(cleaned)];
   return unique.join(", ");
 };
@@ -315,15 +393,37 @@ const cleanPhone = (val) => {
 
 const cleanAddress = (val) => {
   if (!val || typeof val !== "string") return val;
-  // Duplicate address parts remove karo
   const parts = val.split("|").map(p => p.trim()).filter(Boolean);
   const unique = [...new Set(parts)];
   return unique.join(" | ");
 };
 
+// ── Blank fields remover ──────────────────────────────────────────────────────
+const BLANK_VALUES = new Set([
+  "", "N/A", "n/a", "NA", "na", "-", "--", "none", "None", 
+  "NONE", "null", "NULL", "undefined", "not available", 
+  "Not Available", "N.A.", "n.a."
+]);
+
+const removeBlankFields = (obj) => {
+  if (!obj || typeof obj !== "object") return obj;
+  const cleaned = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (
+      value !== null &&
+      value !== undefined &&
+      !BLANK_VALUES.has(String(value).trim())
+    ) {
+      cleaned[key] = value;
+    }
+  }
+  return cleaned;
+};
+
+// ── Clean result ──────────────────────────────────────────────────────────────
 const cleanResult = (obj) => {
   if (!obj || typeof obj !== "object") return obj;
-  return {
+  const result = {
     ...obj,
     email:    cleanEmail(obj.email),
     phone:    cleanPhone(obj.phone),
@@ -331,6 +431,7 @@ const cleanResult = (obj) => {
     whatsapp: cleanPhone(obj.whatsapp),
     address:  cleanAddress(obj.address),
   };
+  return removeBlankFields(result);
 };
 
 async function extractFromImage(buffer, mimeType, language = "auto") {
@@ -353,13 +454,199 @@ async function extractFromImages(frontBuf, frontMime, backBuf, backMime) {
 // ROUTES
 // ══════════════════════════════════════════════════════════════════════════════
 
+//register or Login
+app.post("/api/auth/register-or-login", async (req,res) =>{
+  try{
+    const{email,name}=req.body;
+    if(!email) return res.status(400).json({error:"Email required"});
+    let user = await User.findOne({email});
+    if(!user){
+      if(!name) return res.status(400).json({error:"Name required "});
+      user = await User.create({email,name});
+    }
+    const s=user.canScan();
+    res.json({
+      success:true,
+      user:{
+        id:user._id,name:user.name,email:user.email,
+        plan:user.plan,isPremium:user.isPremium,
+        freeScansUsed:user.freeScansUsed,
+        freeScansLeft:Math.max(0,5-user.freeScansUsed),
+        scansRemaining:user.scansRemaining,
+        premiumExpiry:user.premiumExpiry,
+        canScan:s.allowed,scanReason:s.reason,
+      },
+    })
+  }
+  catch (err) {res.status(500).json({error:err.message});}
+});
+
+
+// api for user Status
+app.get("/api/user/status", async (req,res) =>{
+try{
+const {email} =req.query;
+if(!email) return res.status(400).json({error:"Email Required"});
+const user = await User.findOne({email});
+if(!user) return res.status(404).json({error:"User not Found"}); 
+const s=user.canScan();
+res.json({
+  sucess:true,
+  user:{
+    id:user._id,name:user.name,email:user.email,
+    plan:user.plan,isPremium:user.isPremium,
+    freeScansUsed:user.freeScansUsed,
+    freeScansLeft:Math.max(0, 5 - user.freeScansUsed),
+    scansRemaining:user.scansRemaining,
+    premiumExpiry:user.premiumExpiry,
+    canScan:s.allowed, scanReason:s.reason,
+  },
+});
+}
+catch(err) {res.status(500).json({err:err.message});}
+});
+
+
+// Payment routes
+app.post("/api/payment/create-order", async (req,res) =>{
+  try{
+    const {email,plan}=req.body;
+    if(!PLANS[plan]) return res.status(400).json({error:"Invalid plan"});
+    const user = await User.findOne({email});
+    if(!user) return res.status(404).json({error: "User not found"});
+
+    const planInfo = PLANS[plan];
+    const orderId = `order_${user._id}_${Date.now()}`;
+
+    const response = await fetch(`${CF_BASE}/pg/orders` ,{
+    method: "POST",
+    headers:{
+      "Content-Type": "application/json",
+      "x-api-version": CF_VERSION,
+      "x-client-id" : CF_APP_ID,
+      "x-client-secret" : CF_SECRET,
+    },
+
+    body :JSON.stringify({
+     order_id: orderId,
+     order_amount: planInfo.amount,
+     order_currency: "INR",
+     customer_details: {
+      customer_id: user._id.toString(),
+      customer_name : user.name,
+      customer_email:user.email,
+      customer_phone: req.body.phone || "9999999999",
+     },
+     order_meta:{
+      return_url:`${process.env.FRONTEND_URL || "http://localhost:3000"}/payment/status?order_id={order_id}`,
+      notify_url:`${process.env.BACKEND_URL || "http://localhost:5000"}/api/payment/webhook`,
+     },
+      order_note:`Card Scanner - ${planInfo.label}`,
+    }),
+    });
+
+    const data = await response.json();
+    if(!response.ok) throw new Error(data.message || "Order create failed");
+    user.payments.push({orderId,plan,amount:planInfo.amount, scans:planInfo.scans,status:"pending", cfOrderId: data.order_id });
+    await user.save();
+
+    res.json({
+      success:true,orderId,
+      paymentSessionId:data.payment_session_id,
+      amount:planInfo.amount, planInfo,
+      userName:user.name,userEmail:user.email,
+    });
+  }
+  catch(err) {res.status(500).json({error:err.message});}
+});
+
+// Payment Verify
+app.post("/api/payment/verify", async (req,res)=>{
+try{
+  const {orderId,email,plan} = req.body;
+  const response = await fetch(`${CF_BASE}/pg/orders/${orderId}`,{
+    method: "GET",
+    headers: {"x-api-version":CF_VERSION,"x-client-id":CF_APP_ID,"x-client-secret":CF_SECRET},
+  });
+  const orderData = await response.json();
+  if(!response.ok) throw new Error(orderData.message || "Order fetch failed");
+  if(orderData.order_status !== "PAID")
+    return res.status(400).json({error:"Payment not completed", status:orderData.order_status});
+   
+  const user = await User.findOne({email});
+  if(!user) return res.status(404).json({error:"User not found"});
+  const planInfo = PLANS[plan];
+  const payment = user.payments.find(p => p.orderId === orderId);
+  if(payment) {payment.status = "success"; payment.paidAt = new Date(); }
+  user.isPremium = true; user.plan=plan; user.premiumActivatedAt = new Date();
+  if(plan === "unlimited"){
+ const expiry = new Date(); expiry.setDate(expiry.getDate()+30);
+ user.premiumExpiry=expiry; user.scansRemaining = 999999;
+  }
+  else 
+  {
+ user.scansRemaining = (user.scansRemaining || 0) + planInfo.scans;
+ user.premiumExpiry=null;
+  }
+  await user.save();
+  res.json({sucess: true, message: `Payment successfull! ${planInfo.label} activated.`,
+    user:{name:user.name,
+       email:user.email,
+       plan:user.plan,
+       isPremium:user.isPremium,
+       scansRemaining:user.scansRemaining,
+      premiumExpiry:user.premiumExpiry,
+       freeScansLeft:0
+    }
+  });
+}
+catch(err){
+  res.status(500).json({error:err.message});
+}
+});
+
+
+//payment webhook
+app.post("/api/payment/webhook", async (req,res) => {
+  // webhook route mein user/payment fetch hi nahi kiya
+// Yeh add karo:
+try{
+const orderId = req.body.data?.order?.order_id;
+const user = await User.findOne({ "payments.orderId": orderId });
+if (!user) return res.status(404).json({ error: "User not found" });
+const payment = user.payments.find(p => p.orderId === orderId);
+if (!payment) return res.status(404).json({ error: "Payment not found" });
+const signature = req.headers["x-webhook-signature"];
+const timestamp=req.headers["x-webhook-timestamp"];
+const expected = crypto.createHmac("sha256",CF_SECRET).update(timestamp + JSON.stringify(req.body)).digest("base64");
+if(expected !== signature) return res.status(400).json({error: "Invalid signature"});
+if(req.body.type !== "PAYMENT_SUCCESS_WEBHOOK") return res.json({received:true});
+const planInfo = PLANS[payment.plan];
+payment.status = "success"; payment.paidAt = new Date();
+user.isPremium = true; user.plan = payment.plan; user.premiumActivatedAt = new Date();
+if(payment.plan === "unlimited"){
+  const expiry = new Date(); expiry.setDate(expiry.getDate()+30);
+  user.premiumExpiry = expiry; user.scansRemaining = 99999;
+}
+else {
+  user.scansRemaining = (user.scansRemaining || 0) + planInfo.scans;
+}
+await user.save();
+console.log(`✅ Webhook: ${user.email} — ${payment.plan}`);
+res.json({received:true});
+}
+catch(err)
+{res.status(500).json({error:err.message});}
+})
+
+
 // ── POST /api/extract ─────────────────────────────────────────────────────────
-app.post("/api/extract", upload.single("card"), async (req, res) => {
+app.post("/api/extract", upload.single("card"),checkScanQuota, async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "Koi image upload nahi hui" });
     const language = req.body.language || "auto";
     const parsed = await extractFromImage(req.file.buffer, req.file.mimetype, language);
-
+    await deductAfterScan(req);
     if (Array.isArray(parsed)) {
       const saved = await Promise.all(parsed.map(data => saveCard(data).catch(() => null)));
       res.json({
@@ -383,7 +670,7 @@ app.post("/api/extract", upload.single("card"), async (req, res) => {
 
 // ── POST /api/extract-frontback ───────────────────────────────────────────────
 app.post("/api/extract-frontback",
-  upload.fields([{ name: "front", maxCount: 1 }, { name: "back", maxCount: 1 }]),
+  upload.fields([{ name: "front", maxCount: 1 }, { name: "back", maxCount: 1 }]),checkScanQuota,
   async (req, res) => {
     try {
       const frontFile = req.files?.front?.[0];
@@ -392,6 +679,7 @@ app.post("/api/extract-frontback",
       if (!backFile)  return res.status(400).json({ error: "Back image nahi hui" });
 
       const data  = await extractFromImages(frontFile.buffer, frontFile.mimetype, backFile.buffer, backFile.mimetype);
+      await deductAfterScan(req);
       const saved = await saveCard(data).catch(e => { console.error(e.message); return null; });
 
       res.json({ success: true, savedId: saved?._id, data });
@@ -403,7 +691,7 @@ app.post("/api/extract-frontback",
 );
 
 // ── POST /api/extract-bulk ────────────────────────────────────────────────────
-app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
+app.post("/api/extract-bulk", upload.array("cards", 50),checkScanQuota, async (req, res) => {
   try {
     if (!req.files?.length) return res.status(400).json({ error: "Koi image nahi hui" });
 
@@ -441,7 +729,7 @@ app.post("/api/extract-bulk", upload.array("cards", 50), async (req, res) => {
       res.write(" ");
       if (i + batchSize < req.files.length) await delay(batchDelay);
     }
-
+    await deductAfterScan(req);
     res.end(JSON.stringify({ success: true, results: results.flat() }));
   } catch (err) {
     res.status(500).json({ error: err.message });
