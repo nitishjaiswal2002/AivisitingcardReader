@@ -1,0 +1,87 @@
+.paywall-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 1000; padding: 16px;
+}
+.paywall-box {
+  background: #fff;
+  border-radius: 24px;
+  padding: 32px 28px;
+  width: 100%; max-width: 520px;
+  position: relative;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.25);
+  max-height: 90vh; overflow-y: auto;
+}
+.modal-close {
+  position: absolute; top: 14px; right: 16px;
+  background: #f1f1f1; border: none; border-radius: 50%;
+  width: 28px; height: 28px; cursor: pointer;
+  font-size: 13px; color: #555;
+}
+
+.paywall-header   { text-align: center; margin-bottom: 24px; }
+.paywall-icon     { font-size: 44px; margin-bottom: 8px; }
+.paywall-title    { font-size: 22px; font-weight: 700; color: #1a1a1a; margin: 0 0 6px; }
+.paywall-sub      { font-size: 14px; color: #666; margin: 0; }
+
+.plans-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+@media (max-width: 400px) { .plans-grid { grid-template-columns: 1fr 1fr; gap: 8px; } }
+
+.plan-card {
+  border: 2px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 14px 10px;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+  text-align: center;
+}
+.plan-card:hover         { border-color: var(--plan-color); transform: translateY(-2px); }
+.plan-card.plan-selected {
+  border-color: var(--plan-color);
+  background: color-mix(in srgb, var(--plan-color) 8%, white);
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--plan-color) 20%, transparent);
+}
+.plan-badge {
+  position: absolute; top: -10px; left: 50%; transform: translateX(-50%);
+  background: var(--plan-color); color: #fff;
+  font-size: 10px; font-weight: 700;
+  padding: 3px 10px; border-radius: 20px;
+  white-space: nowrap;
+}
+.plan-label     { font-size: 12px; color: #888; margin-bottom: 4px; }
+.plan-scans-num { font-size: 26px; font-weight: 800; color: var(--plan-color); }
+.plan-scans-text{ font-size: 12px; color: #555; }
+.plan-price     { font-size: 20px; font-weight: 700; color: #1a1a1a; margin-top: 4px; }
+.plan-per       { font-size: 10px; color: #888; }
+.plan-desc      { font-size: 10px; color: #999; margin-top: 4px; }
+
+.paywall-why {
+  display: flex; flex-wrap: wrap; gap: 8px;
+  justify-content: center; margin-bottom: 20px;
+}
+.why-item {
+  font-size: 12px; color: #444;
+  background: #f4f4f8; border-radius: 20px;
+  padding: 5px 12px;
+}
+
+.paywall-error  { color: #e53e3e; font-size: 13px; text-align: center; margin-bottom: 12px; }
+
+.paywall-btn {
+  width: 100%; padding: 16px;
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: #fff; border: none; border-radius: 12px;
+  font-size: 17px; font-weight: 700;
+  cursor: pointer; transition: opacity 0.2s;
+  margin-bottom: 10px;
+}
+.paywall-btn:disabled       { opacity: 0.6; cursor: not-allowed; }
+.paywall-btn:hover:not(:disabled) { opacity: 0.9; }
+.paywall-secure { text-align: center; font-size: 12px; color: #888; margin: 0; }
