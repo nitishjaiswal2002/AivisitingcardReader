@@ -58,3 +58,32 @@
   background: #f4f4f8; border-radius: 20px;
   padding: 5px 12px;
 }
+.otp-input {
+  letter-spacing: 0.4em;
+  font-size: 22px;
+  text-align: center;
+}
+
+.phone-prefix {
+  display: flex;
+  align-items: center;
+  border: 2px solid #e0e0e0;
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border 0.2s;
+}
+.phone-prefix:focus-within { border-color: #6366f1; }
+.phone-prefix span {
+  padding: 13px 12px;
+  background: #f4f4f8;
+  color: #555;
+  font-size: 15px;
+  border-right: 2px solid #e0e0e0;
+}
+.phone-prefix input {
+  border: none !important;
+  outline: none;
+  padding: 13px 14px;
+  font-size: 15px;
+  width: 100%;
+}

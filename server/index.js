@@ -455,30 +455,33 @@ async function extractFromImages(frontBuf, frontMime, backBuf, backMime) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 //register or Login
-app.post("/api/auth/register-or-login", async (req,res) =>{
-  try{
-    const{email,name}=req.body;
-    if(!email) return res.status(400).json({error:"Email required"});
-    let user = await User.findOne({email});
-    if(!user){
-      if(!name) return res.status(400).json({error:"Name required "});
-      user = await User.create({email,name});
+app.post("/api/auth/register-or-login", async (req, res) => {
+  try {
+    const { phone, name, firebaseUid } = req.body;
+    if (!phone) return res.status(400).json({ error: "Phone required" });
+
+    let user = await User.findOne({ phone });
+    if (!user) {
+      if (!name) return res.status(400).json({ error: "Name required" });
+      user = await User.create({ phone, name, firebaseUid });
     }
-    const s=user.canScan();
+
+    const s = user.canScan();
     res.json({
-      success:true,
-      user:{
-        id:user._id,name:user.name,email:user.email,
-        plan:user.plan,isPremium:user.isPremium,
-        freeScansUsed:user.freeScansUsed,
-        freeScansLeft:Math.max(0,5-user.freeScansUsed),
-        scansRemaining:user.scansRemaining,
-        premiumExpiry:user.premiumExpiry,
-        canScan:s.allowed,scanReason:s.reason,
+      success: true,
+      user: {
+        id: user._id, name: user.name, phone: user.phone,
+        plan: user.plan, isPremium: user.isPremium,
+        freeScansUsed: user.freeScansUsed,
+        freeScansLeft: Math.max(0, 5 - user.freeScansUsed),
+        scansRemaining: user.scansRemaining,
+        premiumExpiry: user.premiumExpiry,
+        canScan: s.allowed, scanReason: s.reason,
       },
-    })
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
-  catch (err) {res.status(500).json({error:err.message});}
 });
 
 
