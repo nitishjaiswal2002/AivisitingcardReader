@@ -14,6 +14,7 @@ export default function LoginModal({ onLogin, onClose }) {
   const [step, setStep]                   = useState("phone");
   const [confirmResult, setConfirmResult] = useState(null);
   const [isNewUser, setIsNewUser]         = useState(false);
+  const [firebaseUid, setFirebaseUid] = useState("");
 
   const containerRef = useRef(null);
 
@@ -88,7 +89,7 @@ export default function LoginModal({ onLogin, onClose }) {
     setError("");
     try {
       const result      = await confirmResult.confirm(otp);
-      const firebaseUid = result.user.uid;
+      setFirebaseUid(result.user.uid);
       if (isNewUser) {
         setStep("name");
       } else {
