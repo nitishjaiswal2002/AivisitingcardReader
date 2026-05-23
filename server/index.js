@@ -188,15 +188,15 @@ app.use(express.json());
 // SCAN quota middleware
 const checkScanQuota = async (req, res, next)=>{
   try{
-    const email = req.body.email || req.query.email;
-    if(!email) return res.status(401).json({
+    const phone = req.body.phone || req.query.phone;
+    if(!phone) return res.status(401).json({
       error: "Login required", code: "AUTH_REQUIRED",
-      message : "Pehle apna email enter karo",
+      message : "Pehle apna Phone number enter karo",
     });
-    const user = await User.findOne({email});
+    const user = await User.findOne({phone});
     if(!user) return res.status(404).json({
       error:"User not found", code:"USER_NOT_FOUND",
-      message:"Email register nahi hai",
+      message:"Phone number register nahi hai",
     });
 
     let scanCount=1;
@@ -457,7 +457,8 @@ async function extractFromImages(frontBuf, frontMime, backBuf, backMime) {
 //register or Login
 app.post("/api/auth/register-or-login", async (req, res) => {
   try {
-    const { phone, name, firebaseUid } = req.body;
+    const { phone, name } = req.body;
+    const firebaseUid = req.body.firebaseUid || null;
     if (!phone) return res.status(400).json({ error: "Phone required" });
 
     let user = await User.findOne({ phone });
@@ -488,13 +489,13 @@ app.post("/api/auth/register-or-login", async (req, res) => {
 // api for user Status
 app.get("/api/user/status", async (req,res) =>{
 try{
-const {email} =req.query;
-if(!email) return res.status(400).json({error:"Email Required"});
-const user = await User.findOne({email});
+const {phone} =req.query;
+if(!phone) return res.status(400).json({error:"Phone Required"});
+const user = await User.findOne({phone});
 if(!user) return res.status(404).json({error:"User not Found"}); 
 const s=user.canScan();
 res.json({
-  sucess:true,
+  success:true,
   user:{
     id:user._id,name:user.name,email:user.email,
     plan:user.plan,isPremium:user.isPremium,
