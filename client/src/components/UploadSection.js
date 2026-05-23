@@ -172,6 +172,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
       handleFiles(e.dataTransfer.files);
   };
 
+
   const handleExtract = useCallback(async () => {
   
     if(!userPhone){
@@ -556,10 +557,14 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
 
       {readyToExtract && (
         <button
-          className={`extract-btn ${isProcessing ? "processing" : ""}`}
-          onClick={handleExtract}
-          disabled={isProcessing || compressing}
-        >
+    className={`extract-btn ${isProcessing ? "processing" : ""}`}
+    onClick={() => {
+            console.log("BUTTON CLICKED");
+            console.log("userPhone:", userPhone);
+           handleExtract();
+           }}
+           disabled={isProcessing || compressing}
+          >
           {!isProcessing && <span>🤖</span>}
           {isProcessing
             ? "🤖 Processing... please wait"
