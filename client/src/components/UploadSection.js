@@ -225,7 +225,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
         const formData = new FormData();
         formData.append("card", files[0]);
         formData.append("language", language);
-        formData.append("email",userPhone);
+        formData.append("phone",userPhone);
 
         console.log("Calling:", `${BASE_URL}/api/extract`);
         const res = await axios.post(`${BASE_URL}/api/extract`, formData, {
