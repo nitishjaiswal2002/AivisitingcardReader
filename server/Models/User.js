@@ -11,7 +11,6 @@ const userSchema = new mongoose.Schema({
   premiumExpiry:      { type: Date, default: null },
   premiumActivatedAt: { type: Date, default: null },       // ✅ date→Date, premuim→premium
   phone: { type: String, unique: true, sparse: true },
-  firebaseUid: { type: String, unique: true, sparse: true,default: null },
   payments: [{
     orderId:   String,
     cfOrderId: String,

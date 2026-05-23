@@ -216,7 +216,7 @@ function HomePage() {
         cardSide={cardSide}
         bulkCardSide={bulkCardSide}
         language={language}
-        userPhone={user?.phone}
+        userEmail={user?.phone}
         setLoading={setLoading}
         setError={setError}
         onResults={handleResults}
