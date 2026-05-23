@@ -34,7 +34,22 @@ function HomePage() {
   const [showPaywall, setShowPaywall] = useState(false);
   const [showSuccess, setShowSuccess] = useState(null);
 
-  const handleResults = (data) => setResults(data);
+
+    // handle user bar result
+   const handleResults = (data) => {
+  setResults(data);
+  if (user?.phone) {
+    fetch(`${process.env.REACT_APP_API_URL || "http://localhost:5000"}/api/user/status?phone=${encodeURIComponent(user.phone)}`)
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) {
+          setUser(d.user);
+          localStorage.setItem("cardscanner_user", JSON.stringify(d.user));
+        }
+      })
+      .catch(() => {});
+  }
+};
 
   const handleLogin = (userData) => {
     setUser(userData);
