@@ -14,7 +14,7 @@ export default function LoginModal({ onLogin, onClose }) {
   const [step, setStep]                   = useState("phone");
   const [confirmResult, setConfirmResult] = useState(null);
   const [isNewUser, setIsNewUser]         = useState(false);
-  const [firebaseUid, setFirebaseUid] = useState("");
+ 
 
   const containerRef = useRef(null);
 
@@ -65,11 +65,20 @@ export default function LoginModal({ onLogin, onClose }) {
     setLoading(true);
     setError("");
     try {
-      const result = await signInWithPhoneNumber(auth, `+91${phone}`, window.recaptchaVerifier);
-      setConfirmResult(result);
-
+       // ✅ Pehle DB check karo
       const res  = await fetch(`${BASE_URL}/api/user/status?phone=${phone}`);
       const data = await res.json();
+
+      
+      // Naya user — OTP bhejo
+     if (data.success) {
+      // ✅ Returning user — seedha login, no OTP
+      onLogin(data.user);
+      return;
+    }
+
+      const result = await signInWithPhoneNumber(auth, `+91${phone}`, window.recaptchaVerifier);
+      setConfirmResult(result);
       setIsNewUser(!data.success);
       setStep("otp");
 
@@ -89,7 +98,6 @@ export default function LoginModal({ onLogin, onClose }) {
     setError("");
     try {
       const result      = await confirmResult.confirm(otp);
-      setFirebaseUid(result.user.uid);
       if (isNewUser) {
         setStep("name");
       } else {
