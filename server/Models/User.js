@@ -1,7 +1,6 @@
 import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema({
-  email:              { type: String, required: true, unique: true, lowercase: true },
   name:               { type: String, required: true },
   createdAt:          { type: Date, default: Date.now },
   freeScansUsed:      { type: Number, default: 0 },
@@ -11,6 +10,8 @@ const userSchema = new mongoose.Schema({
   scansRemaining:     { type: Number, default: 0 },
   premiumExpiry:      { type: Date, default: null },
   premiumActivatedAt: { type: Date, default: null },       // ✅ date→Date, premuim→premium
+  phone: { type: String, unique: true, sparse: true },
+  firebaseUid: { type: String, unique: true, sparse: true },
   payments: [{
     orderId:   String,
     cfOrderId: String,
