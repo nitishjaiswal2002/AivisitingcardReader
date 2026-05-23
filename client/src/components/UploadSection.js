@@ -31,7 +31,7 @@ const compressImage = (file) => {
   });
 };
 
-function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, setError, onResults,userEmail,onPaywallNeeded,    // ← NEW: jab 402 aaye
+function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, setError, onResults,userPhone,onPaywallNeeded,    // ← NEW: jab 402 aaye
   onLoginNeeded, }) {
   const [dragOver, setDragOver]         = useState(false);
   const [previews, setPreviews]         = useState([]);
@@ -174,7 +174,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
 
   const handleExtract = useCallback(async () => {
   
-    if(!userEmail){
+    if(!userPhone){
       onLoginNeeded();
       return
     }
@@ -225,7 +225,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
         const formData = new FormData();
         formData.append("card", files[0]);
         formData.append("language", language);
-        formData.append("email",userEmail);
+        formData.append("email",userPhone);
 
         console.log("Calling:", `${BASE_URL}/api/extract`);
         const res = await axios.post(`${BASE_URL}/api/extract`, formData, {
@@ -245,7 +245,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
         formData.append("front", frontFile);
         formData.append("back", backFile);
         formData.append("language", language);
-        formData.append("email",userEmail);
+        formData.append("phone",userPhone);
 
         console.log("Calling:", `${BASE_URL}/api/extract-frontback`);
         const res = await axios.post(`${BASE_URL}/api/extract-frontback`, formData, {
@@ -262,7 +262,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
         const formData = new FormData();
         files.forEach((f) => formData.append("cards", f));
         formData.append("language", language);
-        formData.append("email",userEmail);
+        formData.append("phone",userPhone);
 
         console.log("Calling:", `${BASE_URL}/api/extract-bulk`);
         const response = await fetch(`${BASE_URL}/api/extract-bulk`, {
@@ -289,7 +289,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
             formData.append("front", front.file);
             formData.append("back", back.file);
             formData.append("language", language);
-            formData.append("email",userEmail);
+            formData.append("phone",userPhone);
 
             console.log("Calling pair:", `${BASE_URL}/api/extract-frontback`);
             const res = await axios.post(`${BASE_URL}/api/extract-frontback`, formData, {
@@ -312,7 +312,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
           const formData = new FormData();
           singleCards.forEach((item) => formData.append("cards", item.file));
           formData.append("language", language);
-          formData.append("email",userEmail);
+          formData.append("phone",userPhone);
           try {
             const response = await fetch(`${BASE_URL}/api/extract-bulk`, { method: "POST", body: formData });
             const data = await response.json();
@@ -356,7 +356,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
       setLoading(false);
       setIsProcessing(false);
     }
-  }, [files, frontFile, backFile, cardSide, bulkCardSide, bulkItems, mode, language,userEmail, setLoading, setError, onResults,onLoginNeeded,onPaywallNeeded,isProcessing]);
+  }, [files, frontFile, backFile, cardSide, bulkCardSide, bulkItems, mode, language,userPhone, setLoading, setError, onResults,onLoginNeeded,onPaywallNeeded,isProcessing]);
 
   const removeFile = (index) => {
     setFiles(files.filter((_, i) => i !== index));
