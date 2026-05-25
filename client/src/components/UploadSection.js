@@ -31,7 +31,7 @@ const compressImage = (file) => {
   });
 };
 
-function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, setError, onResults,userPhone,onPaywallNeeded,    // ← NEW: jab 402 aaye
+function UploadSection({ mode, cardSide, bulkCardSide, user, language, setLoading, setError, onResults,userPhone,onPaywallNeeded,    // ← NEW: jab 402 aaye
   onLoginNeeded, }) {
   const [dragOver, setDragOver]         = useState(false);
   const [previews, setPreviews]         = useState([]);
