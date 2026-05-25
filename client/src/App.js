@@ -117,6 +117,14 @@ function HomePage() {
       try {
         const parsed = JSON.parse(saved);
         setUser(parsed);
+         // ✅ phone nahi hai toh localStorage clear karo — fresh login karwao
+       if (!parsed.phone) {
+        localStorage.removeItem("cardscanner_user");
+        setUser(null);
+        return;
+       }
+
+
         // ✅ phone se refresh karo — email nahi hoga phone-auth mein
         fetch(`${process.env.REACT_APP_API_URL || "http://localhost:5000"}/api/user/status?phone=${encodeURIComponent(parsed.phone)}`)
           .then(r => r.json())
