@@ -175,6 +175,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
 
   const handleExtract = useCallback(async () => {
   
+  const phone = userPhone || user?.phone || user?.id;
     if(!userPhone){
       onLoginNeeded();
       return
@@ -226,7 +227,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
         const formData = new FormData();
         formData.append("card", files[0]);
         formData.append("language", language);
-        formData.append("phone",userPhone);
+        formData.append("phone",Phone);
 
         console.log("Calling:", `${BASE_URL}/api/extract`);
         const res = await axios.post(`${BASE_URL}/api/extract`, formData, {
@@ -246,7 +247,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
         formData.append("front", frontFile);
         formData.append("back", backFile);
         formData.append("language", language);
-        formData.append("phone",userPhone);
+        formData.append("phone",Phone);
 
         console.log("Calling:", `${BASE_URL}/api/extract-frontback`);
         const res = await axios.post(`${BASE_URL}/api/extract-frontback`, formData, {
@@ -263,7 +264,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
         const formData = new FormData();
         files.forEach((f) => formData.append("cards", f));
         formData.append("language", language);
-        formData.append("phone",userPhone);
+        formData.append("phone",Phone);
 
         console.log("Calling:", `${BASE_URL}/api/extract-bulk`);
         const response = await fetch(`${BASE_URL}/api/extract-bulk`, {
@@ -290,7 +291,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
             formData.append("front", front.file);
             formData.append("back", back.file);
             formData.append("language", language);
-            formData.append("phone",userPhone);
+            formData.append("phone",Phone);
 
             console.log("Calling pair:", `${BASE_URL}/api/extract-frontback`);
             const res = await axios.post(`${BASE_URL}/api/extract-frontback`, formData, {
@@ -313,7 +314,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, language, setLoading, set
           const formData = new FormData();
           singleCards.forEach((item) => formData.append("cards", item.file));
           formData.append("language", language);
-          formData.append("phone",userPhone);
+          formData.append("phone",Phone);
           try {
             const response = await fetch(`${BASE_URL}/api/extract-bulk`, { method: "POST", body: formData });
             const data = await response.json();
