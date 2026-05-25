@@ -497,7 +497,7 @@ const s=user.canScan();
 res.json({
   success:true,
   user:{
-    id:user._id,name:user.name,email:user.email,
+    id:user._id,name:user.name,phone:user.phone,
     plan:user.plan,isPremium:user.isPremium,
     freeScansUsed:user.freeScansUsed,
     freeScansLeft:Math.max(0, 5 - user.freeScansUsed),
