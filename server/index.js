@@ -527,7 +527,6 @@ app.post("/api/payment/create-order", async (req, res) => {
         customer_details: {
           customer_id: user._id.toString(),
           customer_name : user.name,
-          customer_email: user.email || "no-email@scanner.com",
           customer_phone: user.phone, // ✅ Standardized from DB Object
         },
         order_meta: {
