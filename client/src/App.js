@@ -35,8 +35,32 @@ function HomePage() {
   const [showPaywall, setShowPaywall] = useState(false);
   const [showSuccess, setShowSuccess] = useState(null);
 
+  // ⚡ Dynamic trigger check: Agar scan limit exact 0 ho jaye
+  const isLimitExhausted = user ? (
+    (!user.isPremium && (user.freeScansLeft ?? 0) === 0) || 
+    (user.isPremium && (user.scansRemaining ?? 0) === 0)
+  ) : false;
+
   const handleResults = (data) => {
     setResults(data);
+    
+    // UI state updates immediately after execution sync
+    setUser((prev) => {
+      if (!prev) return null;
+      const currentFree = prev.freeScansLeft ?? 0;
+      const currentPremium = prev.scansRemaining ?? 0;
+      
+      let updatedUser = { ...prev };
+      if (currentFree > 0) {
+        updatedUser.freeScansLeft = Math.max(0, currentFree - 1);
+      } else if (currentPremium > 0) {
+        updatedUser.scansRemaining = Math.max(0, currentPremium - 1);
+      }
+      localStorage.setItem("cardscanner_user", JSON.stringify(updatedUser));
+      return updatedUser;
+    });
+
+    // Sync state with server backend architecture
     if (user?.phone) {
       fetch(`${API_URL}/api/user/status?phone=${encodeURIComponent(user.phone)}`)
         .then(r => r.json())
@@ -62,7 +86,7 @@ function HomePage() {
   };
 
   const handlePaywallNeeded = (msg) => {
-    setError(msg);
+    setError(msg || "Aapki scan limit khatam ho gayi hai.");
     setShowPaywall(true);
   };
 
@@ -116,7 +140,7 @@ function HomePage() {
     const handleMqChange = (e) => setIsInstalled(e.matches);
     mq.addEventListener("change", handleMqChange);
 
-    // Saved user load karo
+    // Saved user load logic
     const saved = localStorage.getItem("cardscanner_user");
     if (saved) {
       try {
@@ -267,11 +291,18 @@ function HomePage() {
         />
       )}
 
-      {showPaywall && user && (
+      {/* 🚀 Dynamic Immediate Trigger Condition Handling */}
+      {(showPaywall || isLimitExhausted) && user && (
         <PaywallModal
           user={user}
           onSuccess={handlePaymentSuccess}
-          onClose={() => setShowPaywall(false)}
+          onClose={() => {
+            if (isLimitExhausted) {
+              alert("Aapka active balance 0 ho chuka hai. Kripya continue karne ke liye pack buy karein.");
+              return;
+            }
+            setShowPaywall(false);
+          }}
         />
       )}
 
@@ -296,7 +327,6 @@ function App() {
         <Route path="/privacy-policy" element={<PrivacyPolicy />} />
         <Route path="/terms-and-conditions" element={<TermsAndConditions />} />
         <Route path="/refund-policy" element={<RefundPolicy />} />
-        {/* Is component ke andar query parameters handle kar lena fallback ke liye */}
         <Route path="/payment/status" element={<PaymentSuccess />} />
       </Routes>
     </Router>

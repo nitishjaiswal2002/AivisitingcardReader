@@ -183,12 +183,21 @@ function UploadSection({
   };
 
   const handleExtract = useCallback(async () => {
-    // ✅ Strong fallback chain to detect active session phone
     const activePhone = userPhone || user?.phone || (localStorage.getItem("cardscanner_user") ? JSON.parse(localStorage.getItem("cardscanner_user"))?.phone : null);
     
     if (!activePhone) {
       console.log("Extraction blocked: User not identified.");
       onLoginNeeded();
+      return;
+    }
+
+    // ⚡ Frontline limit check
+    const freeLeft = user?.freeScansLeft ?? 0;
+    const premiumLeft = user?.scansRemaining ?? 0;
+    const isPremiumUser = user?.isPremium ?? false;
+
+    if ((!isPremiumUser && freeLeft === 0) || (isPremiumUser && premiumLeft === 0)) {
+      onPaywallNeeded("Aapka active scan balance khatam ho chuka hai.");
       return;
     }
 
@@ -237,7 +246,7 @@ function UploadSection({
         const formData = new FormData();
         formData.append("card", files[0]);
         formData.append("language", language);
-        formData.append("phone", activePhone); // ✅ Fixed variable mapping
+        formData.append("phone", activePhone);
 
         const res = await axios.post(`${BASE_URL}/api/extract`, formData, {
           headers: { "Content-Type": "multipart/form-data" },
@@ -256,7 +265,7 @@ function UploadSection({
         formData.append("front", frontFile);
         formData.append("back", backFile);
         formData.append("language", language);
-        formData.append("phone", activePhone); // ✅ Fixed variable mapping
+        formData.append("phone", activePhone);
 
         const res = await axios.post(`${BASE_URL}/api/extract-frontback`, formData, {
           headers: { "Content-Type": "multipart/form-data" },
@@ -272,12 +281,20 @@ function UploadSection({
         const formData = new FormData();
         files.forEach((f) => formData.append("cards", f));
         formData.append("language", language);
-        formData.append("phone", activePhone); // ✅ Fixed variable mapping
+        formData.append("phone", activePhone);
 
         const response = await fetch(`${BASE_URL}/api/extract-bulk`, {
           method: "POST",
           body: formData,
         });
+        
+        if (response.status === 402) {
+          onPaywallNeeded("Free trial complete — Premium lo!");
+          setLoading(false);
+          setIsProcessing(false);
+          return;
+        }
+
         if (!response.ok) {
           const err = await response.json().catch(() => ({ error: "Server error" }));
           throw new Error(err.error || `Server error ${response.status}`);
@@ -297,7 +314,7 @@ function UploadSection({
             formData.append("front", front.file);
             formData.append("back", back.file);
             formData.append("language", language);
-            formData.append("phone", activePhone); // ✅ Fixed variable mapping
+            formData.append("phone", activePhone);
 
             const res = await axios.post(`${BASE_URL}/api/extract-frontback`, formData, {
               headers: { "Content-Type": "multipart/form-data" },
@@ -309,6 +326,12 @@ function UploadSection({
               allResults.push({ filename: front.file.name, status: "error", error: "Extract failed", data: {} });
             }
           } catch (e) {
+            if (e.response?.status === 402) {
+              onPaywallNeeded("Free trial complete — Premium lo!");
+              setLoading(false);
+              setIsProcessing(false);
+              return;
+            }
             allResults.push({ filename: front.file.name, status: "error", error: e.message, data: {} });
           }
         }
@@ -318,9 +341,17 @@ function UploadSection({
           const formData = new FormData();
           singleCards.forEach((item) => formData.append("cards", item.file));
           formData.append("language", language);
-          formData.append("phone", activePhone); // ✅ Fixed variable mapping
+          formData.append("phone", activePhone);
           try {
             const response = await fetch(`${BASE_URL}/api/extract-bulk`, { method: "POST", body: formData });
+            
+            if (response.status === 402) {
+              onPaywallNeeded("Free trial complete — Premium lo!");
+              setLoading(false);
+              setIsProcessing(false);
+              return;
+            }
+
             const data = await response.json();
             if (data.success) allResults.push(...data.results);
           } catch (e) {
@@ -483,6 +514,7 @@ function UploadSection({
                 {unpaired.length > 0 && (
                   <div className="pair-summary-row warn">
                     <span>⚠️ Unpaired fronts:</span>
+                    {/* ⚡ Fixed broken strong tag bracket here */}
                     <strong>{unpaired.length} (sirf front se extract hoga)</strong>
                   </div>
                 )}

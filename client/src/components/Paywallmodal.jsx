@@ -51,8 +51,6 @@ const loadCashfreeSDK = () => {
   return new Promise((resolve, reject) => {
     if (window.Cashfree) return resolve(window.Cashfree);
     const script    = document.createElement("script");
-    // Test: https://sdk.cashfree.com/js/v3/sandbox/cashfree.js
-    // Live: https://sdk.cashfree.com/js/v3/cashfree.js
     script.src      = process.env.NODE_ENV === "production"
       ? "https://sdk.cashfree.com/js/v3/cashfree.js"
       : "https://sdk.cashfree.com/js/v3/sandbox/cashfree.js";
@@ -71,17 +69,16 @@ export default function PaywallModal({ user, onSuccess, onClose }) {
     setLoading(true);
     setError("");
     try {
-       
-       // ✅ MOCK MODE — Cashfree ID milne ke baad yeh 5 lines hata dena
+      // ✅ MOCK MODE — Cashfree ID milne ke baad yeh conditional block hata dena
       if (!process.env.REACT_APP_CASHFREE_APP_ID) {
-        await new Promise(r => setTimeout(r, 1500));
+        await new Promise(r => setTimeout(r, 1000));
         const selectedPlanData = PLANS.find(p => p.id === selected);
         onSuccess(
           {
             ...user,
             isPremium:      true,
             plan:           selected,
-            scansRemaining: selectedPlanData?.scans || 10,
+            scansRemaining: selectedPlanData?.scans === "∞" ? 999999 : (selectedPlanData?.scans || 10),
             freeScansLeft:  0,
           },
           `✅ ${selectedPlanData?.label} plan activated! ${selectedPlanData?.scans} scans added.`
@@ -90,14 +87,19 @@ export default function PaywallModal({ user, onSuccess, onClose }) {
         return;
       }
       // ── MOCK MODE END ──────────────────────────────────────────
-      // 1. Create order on backend
+
+      if (!user?.phone) {
+        throw new Error("User validation failed. Kripya login check karein.");
+      }
+
+      // 1. Create order on backend using phone number
       const orderRes  = await fetch(`${BASE_URL}/api/payment/create-order`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ email: user.email, plan: selected }),
+        body:    JSON.stringify({ phone: user.phone, plan: selected, email: user.email }), 
       });
       const orderData = await orderRes.json();
-      if (!orderData.success) throw new Error(orderData.error);
+      if (!orderData.success) throw new Error(orderData.error || "Order creation failed");
 
       // 2. Load Cashfree SDK
       const CashfreeSDK = await loadCashfreeSDK();
@@ -108,47 +110,47 @@ export default function PaywallModal({ user, onSuccess, onClose }) {
       // 3. Open Cashfree checkout
       const checkoutOptions = {
         paymentSessionId: orderData.paymentSessionId,
-        redirectTarget:   "_modal", // Opens as popup — no page redirect
+        redirectTarget:   "_modal", // Popup window mode
       };
 
       const result = await cashfree.checkout(checkoutOptions);
 
       if (result.error) {
-        throw new Error(result.error.message || "Payment failed");
+        throw new Error(result.error.message || "Payment cancel ya fail ho gayi.");
       }
 
       if (result.paymentDetails?.paymentStatus === "SUCCESS" || result.redirect) {
-        // 4. Verify on backend
+        // 4. Verify on backend using phone number
         const verifyRes  = await fetch(`${BASE_URL}/api/payment/verify`, {
           method:  "POST",
           headers: { "Content-Type": "application/json" },
           body:    JSON.stringify({
             orderId: orderData.orderId,
-            email:   user.email,
+            phone:   user.phone, // ✅ Synced with backend structure
             plan:    selected,
           }),
         });
         const verifyData = await verifyRes.json();
 
-        if (verifyData.success) {
+        // Backend returns { sucess: true } with single 's' typo inside backend controllers
+        if (verifyData.success || verifyData.sucess) {
           onSuccess(verifyData.user, verifyData.message);
         } else {
-          // Webhook ne handle kar liya hoga — refresh karo
-          setError("Payment ho gaya! Page refresh karo ya thoda wait karo.");
+          setError("Payment check ho rahi hai! Agar scans na badhein toh page refresh karein.");
         }
       } else {
-        setError("Payment cancel ho gayi. Dobara try karo.");
+        setError("Payment process complete nahi hua. Dobara try karein.");
       }
 
     } catch (err) {
-      console.error("Payment error:", err);
-      setError(err.message || "Payment mein kuch problem aayi");
+      console.error("Payment integration logs:", err);
+      setError(err.message || "Payment processing timeout setup failure");
     } finally {
       setLoading(false);
     }
   };
 
-  const freeLeft    = user?.freeScansLeft ?? 0;
+  const freeLeft     = user?.freeScansLeft ?? 0;
   const selectedPlan = PLANS.find(p => p.id === selected);
 
   return (
@@ -169,7 +171,7 @@ export default function PaywallModal({ user, onSuccess, onClose }) {
           </p>
         </div>
 
-        {/* Plans */}
+        {/* Plans Grid */}
         <div className="plans-grid">
           {PLANS.map(plan => (
             <div
@@ -191,7 +193,7 @@ export default function PaywallModal({ user, onSuccess, onClose }) {
           ))}
         </div>
 
-        {/* Why Premium */}
+        {/* Core Selling Features */}
         <div className="paywall-why">
           <div className="why-item">⚡ Instant scan</div>
           <div className="why-item">💾 Auto-save</div>
@@ -208,7 +210,7 @@ export default function PaywallModal({ user, onSuccess, onClose }) {
         </button>
 
         <p className="paywall-secure">
-          🔒 Secure payment via Cashfree · UPI / Card / Net Banking / Wallet
+          🔒 Secure payment via Cashfree · UPI / Card / Net Banking
         </p>
       </div>
     </div>
