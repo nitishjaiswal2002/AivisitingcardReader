@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from "react";
 import axios from "axios";
 import "./UploadSection.css";
 
-// ── FIX 1: BASE_URL — fallback to localhost:5000 if env not set ───────────────
+// ── BASE_URL trailing slash removal ───────────────────────────────────────────
 const BASE_URL = (process.env.REACT_APP_API_URL || "http://localhost:5000").replace(/\/$/, "");
 
 const compressImage = (file) => {
@@ -31,8 +31,19 @@ const compressImage = (file) => {
   });
 };
 
-function UploadSection({ mode, cardSide, bulkCardSide, user, language, setLoading, setError, onResults,userPhone,onPaywallNeeded,    // ← NEW: jab 402 aaye
-  onLoginNeeded, }) {
+function UploadSection({ 
+  mode, 
+  cardSide, 
+  bulkCardSide, 
+  user, 
+  language, 
+  setLoading, 
+  setError, 
+  onResults,
+  userPhone,
+  onPaywallNeeded,
+  onLoginNeeded 
+}) {
   const [dragOver, setDragOver]         = useState(false);
   const [previews, setPreviews]         = useState([]);
   const [files, setFiles]               = useState([]);
@@ -46,7 +57,6 @@ function UploadSection({ mode, cardSide, bulkCardSide, user, language, setLoadin
   const [backPreview, setBackPreview]   = useState(null);
   const [bulkItems, setBulkItems]       = useState([]);
 
-
   const lastClickRef   = useRef(0);
   const intervalRef    = useRef(null);
   const fileInputRef   = useRef();
@@ -59,7 +69,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, user, language, setLoadin
 
   const isMobile = () => window.innerWidth < 769;
 
-  // ── FIX 2: setError ko dependency array se hataao — infinite loop fix ────────
+  // Clear states on mode changes
   useEffect(() => {
     setFiles([]);
     setPreviews([]);
@@ -69,7 +79,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, user, language, setLoadin
     setBackPreview(null);
     setBulkItems([]);
     setError("");
-  }, [mode, cardSide, bulkCardSide]);
+  }, [mode, cardSide, bulkCardSide, setError]);
 
   const handleFiles = async (selectedFiles) => {
     const fileArray = Array.from(selectedFiles);
@@ -145,7 +155,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, user, language, setLoadin
 
   const buildPairs = (items) => {
     const fronts   = items.filter((i) => i.role === "front");
-    const backs    = [...items.filter((i) => i.role === "back")]; // copy to avoid mutation
+    const backs    = [...items.filter((i) => i.role === "back")];
     const pairs    = [];
     const unpaired = [];
     fronts.forEach((f) => {
@@ -172,15 +182,16 @@ function UploadSection({ mode, cardSide, bulkCardSide, user, language, setLoadin
       handleFiles(e.dataTransfer.files);
   };
 
-
   const handleExtract = useCallback(async () => {
-  
-  const phone = userPhone || user?.phone || user?.id;
-    if(!userPhone){
+    // ✅ Strong fallback chain to detect active session phone
+    const activePhone = userPhone || user?.phone || (localStorage.getItem("cardscanner_user") ? JSON.parse(localStorage.getItem("cardscanner_user"))?.phone : null);
+    
+    if (!activePhone) {
+      console.log("Extraction blocked: User not identified.");
       onLoginNeeded();
-      return
+      return;
     }
-  
+
     const now = Date.now();
     // Countdown throttle
     if (now - lastClickRef.current < 60000) {
@@ -217,9 +228,8 @@ function UploadSection({ mode, cardSide, bulkCardSide, user, language, setLoadin
     setLoading(true);
     setError("");
 
-    // ── FIX 3: Console log for debugging ─────────────────────────────────────
     console.log("BASE_URL:", BASE_URL);
-    console.log("mode:", mode, "| cardSide:", cardSide, "| bulkCardSide:", bulkCardSide);
+    console.log("Using Phone Number:", activePhone);
 
     try {
       // ── Single front only ──────────────────────────────────────────────────
@@ -227,9 +237,8 @@ function UploadSection({ mode, cardSide, bulkCardSide, user, language, setLoadin
         const formData = new FormData();
         formData.append("card", files[0]);
         formData.append("language", language);
-        formData.append("phone",Phone);
+        formData.append("phone", activePhone); // ✅ Fixed variable mapping
 
-        console.log("Calling:", `${BASE_URL}/api/extract`);
         const res = await axios.post(`${BASE_URL}/api/extract`, formData, {
           headers: { "Content-Type": "multipart/form-data" },
           timeout: 120000,
@@ -247,9 +256,8 @@ function UploadSection({ mode, cardSide, bulkCardSide, user, language, setLoadin
         formData.append("front", frontFile);
         formData.append("back", backFile);
         formData.append("language", language);
-        formData.append("phone",Phone);
+        formData.append("phone", activePhone); // ✅ Fixed variable mapping
 
-        console.log("Calling:", `${BASE_URL}/api/extract-frontback`);
         const res = await axios.post(`${BASE_URL}/api/extract-frontback`, formData, {
           headers: { "Content-Type": "multipart/form-data" },
           timeout: 180000,
@@ -264,9 +272,8 @@ function UploadSection({ mode, cardSide, bulkCardSide, user, language, setLoadin
         const formData = new FormData();
         files.forEach((f) => formData.append("cards", f));
         formData.append("language", language);
-        formData.append("phone",Phone);
+        formData.append("phone", activePhone); // ✅ Fixed variable mapping
 
-        console.log("Calling:", `${BASE_URL}/api/extract-bulk`);
         const response = await fetch(`${BASE_URL}/api/extract-bulk`, {
           method: "POST",
           body: formData,
@@ -284,16 +291,14 @@ function UploadSection({ mode, cardSide, bulkCardSide, user, language, setLoadin
         const { pairs, unpaired, remainingBacks } = buildPairs(bulkItems);
         const allResults = [];
 
-        // Process pairs sequentially to avoid rate limits
         for (const { front, back } of pairs) {
           try {
             const formData = new FormData();
             formData.append("front", front.file);
             formData.append("back", back.file);
             formData.append("language", language);
-            formData.append("phone",Phone);
+            formData.append("phone", activePhone); // ✅ Fixed variable mapping
 
-            console.log("Calling pair:", `${BASE_URL}/api/extract-frontback`);
             const res = await axios.post(`${BASE_URL}/api/extract-frontback`, formData, {
               headers: { "Content-Type": "multipart/form-data" },
               timeout: 180000,
@@ -308,13 +313,12 @@ function UploadSection({ mode, cardSide, bulkCardSide, user, language, setLoadin
           }
         }
 
-        // Process unpaired as single cards
         const singleCards = [...unpaired, ...remainingBacks];
         if (singleCards.length > 0) {
           const formData = new FormData();
           singleCards.forEach((item) => formData.append("cards", item.file));
           formData.append("language", language);
-          formData.append("phone",Phone);
+          formData.append("phone", activePhone); // ✅ Fixed variable mapping
           try {
             const response = await fetch(`${BASE_URL}/api/extract-bulk`, { method: "POST", body: formData });
             const data = await response.json();
@@ -325,40 +329,39 @@ function UploadSection({ mode, cardSide, bulkCardSide, user, language, setLoadin
             );
           }
         }
-
         onResults(allResults);
       }
 
     } catch (err) {
       console.error("Extract error:", err);
-  const status  = err.response?.status;
-  const errData = err.response?.data;
-  const msg     = errData?.error || err.message || "";
+      const status  = err.response?.status;
+      const errData = err.response?.data;
+      const msg     = errData?.error || err.message || "";
 
-  if (status === 402 || errData?.showPaywall) {
-    onPaywallNeeded(errData?.message || "Free trial complete — Premium lo!");
-    return;
-  }
-  if (status === 401 || errData?.code === "AUTH_REQUIRED") {
-    onLoginNeeded();
-    return;
-  }
-  if (msg.includes("404")) {
-    setError(`❌ Route not found — Check REACT_APP_API_URL in .env (current: ${BASE_URL})`);
-  } else if (msg.includes("429") || msg.includes("rate_limited")) {
-    setError("⏳ Abhi bahut requests aa rahi hain — 1 minute baad dobara try karo");
-  } else if (msg.includes("timeout") || msg.includes("ECONNABORTED")) {
-    setError("⏳ Request timeout — dobara try karo");
-  } else if (msg.includes("Network Error") || msg.includes("ERR_CONNECTION_REFUSED")) {
-    setError(`❌ Server se connect nahi ho paya — kya server ${BASE_URL} pe chal raha hai?`);
-  } else {
-    setError(msg || "Server se connect nahi ho paya");
-  }
+      if (status === 402 || errData?.showPaywall) {
+        onPaywallNeeded(errData?.message || "Free trial complete — Premium lo!");
+        return;
+      }
+      if (status === 401 || errData?.code === "AUTH_REQUIRED") {
+        onLoginNeeded();
+        return;
+      }
+      if (msg.includes("404")) {
+        setError(`❌ Route not found — Check REACT_APP_API_URL in .env (current: ${BASE_URL})`);
+      } else if (msg.includes("429") || msg.includes("rate_limited")) {
+        setError("⏳ Abhi bahut requests aa rahi hain — 1 minute baad dobara try karo");
+      } else if (msg.includes("timeout") || msg.includes("ECONNABORTED")) {
+        setError("⏳ Request timeout — dobara try karo");
+      } else if (msg.includes("Network Error") || msg.includes("ERR_CONNECTION_REFUSED")) {
+        setError(`❌ Server se connect nahi ho paya — kya server ${BASE_URL} pe chal raha hai?`);
+      } else {
+        setError(msg || "Server se connect nahi ho paya");
+      }
     } finally {
       setLoading(false);
       setIsProcessing(false);
     }
-  }, [files, frontFile, backFile, cardSide, bulkCardSide, bulkItems, mode, language,userPhone, setLoading, setError, onResults,onLoginNeeded,onPaywallNeeded,isProcessing]);
+  }, [files, frontFile, backFile, cardSide, bulkCardSide, bulkItems, mode, language, userPhone, user, setLoading, setError, onResults, onLoginNeeded, onPaywallNeeded, isProcessing]);
 
   const removeFile = (index) => {
     setFiles(files.filter((_, i) => i !== index));
@@ -375,11 +378,9 @@ function UploadSection({ mode, cardSide, bulkCardSide, user, language, setLoadin
 
   return (
     <div className="upload-section">
-
       {/* ── Single Front+Back UI ─────────────────────────────────────────── */}
       {mode === "single" && cardSide === "frontback" && (
         <div className="frontback-wrap">
-          {/* Front */}
           <div className="side-upload-box">
             <div className="side-label">📄 Front Side</div>
             {frontPreview ? (
@@ -397,11 +398,10 @@ function UploadSection({ mode, cardSide, bulkCardSide, user, language, setLoadin
                 <button className="upload-opt-btn" onClick={() => frontCameraRef.current.click()}>📷 Camera</button>
               )}
             </div>
-            <input ref={frontFileRef}   type="file" accept="image/*"                     style={{ display:"none" }} onChange={(e) => handleFrontFile(e.target.files)} />
+            <input ref={frontFileRef}   type="file" accept="image/*" style={{ display:"none" }} onChange={(e) => handleFrontFile(e.target.files)} />
             <input ref={frontCameraRef} type="file" accept="image/*" capture="environment" style={{ display:"none" }} onChange={(e) => handleFrontFile(e.target.files)} />
           </div>
 
-          {/* Back */}
           <div className="side-upload-box">
             <div className="side-label">📄 Back Side</div>
             {backPreview ? (
@@ -419,7 +419,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, user, language, setLoadin
                 <button className="upload-opt-btn" onClick={() => backCameraRef.current.click()}>📷 Camera</button>
               )}
             </div>
-            <input ref={backFileRef}   type="file" accept="image/*"                     style={{ display:"none" }} onChange={(e) => handleBackFile(e.target.files)} />
+            <input ref={backFileRef}   type="file" accept="image/*" style={{ display:"none" }} onChange={(e) => handleBackFile(e.target.files)} />
             <input ref={backCameraRef} type="file" accept="image/*" capture="environment" style={{ display:"none" }} onChange={(e) => handleBackFile(e.target.files)} />
           </div>
         </div>
@@ -521,7 +521,7 @@ function UploadSection({ mode, cardSide, bulkCardSide, user, language, setLoadin
             <p className="drop-sub">JPG, PNG, WEBP supported</p>
             <p className="drop-limit">{mode === "single" ? "1 card at a time" : "Max 50 cards at once"}</p>
             <input ref={fileInputRef}   type="file" accept="image/*" multiple={mode === "bulk"} style={{ display:"none" }} onChange={(e) => handleFiles(e.target.files)} />
-            <input ref={cameraInputRef} type="file" accept="image/*" capture="environment"      style={{ display:"none" }} onChange={(e) => handleFiles(e.target.files)} />
+            <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" style={{ display:"none" }} onChange={(e) => handleFiles(e.target.files)} />
           </div>
 
           {mode === "single" && !compressing && (
@@ -558,14 +558,13 @@ function UploadSection({ mode, cardSide, bulkCardSide, user, language, setLoadin
 
       {readyToExtract && (
         <button
-    className={`extract-btn ${isProcessing ? "processing" : ""}`}
-    onClick={() => {
-            console.log("BUTTON CLICKED");
-            console.log("userPhone:", userPhone);
-           handleExtract();
-           }}
-           disabled={isProcessing || compressing}
-          >
+          className={`extract-btn ${isProcessing ? "processing" : ""}`}
+          onClick={() => {
+            console.log("BUTTON CLICKED — Verified userPhone session handling.");
+            handleExtract();
+          }}
+          disabled={isProcessing || compressing}
+        >
           {!isProcessing && <span>🤖</span>}
           {isProcessing
             ? "🤖 Processing... please wait"

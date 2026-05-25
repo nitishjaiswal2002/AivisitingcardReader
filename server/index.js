@@ -4,11 +4,8 @@ import multer from "multer";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
 import { saveCard, getAllCards } from "./Controller/cardController.js";
-// Top pe add karo
-import { User } from "./Models/User.js"; // ✅
+import { User } from "./Models/User.js"; 
 import crypto from "crypto";
-
-
 
 dotenv.config();
 
@@ -18,16 +15,11 @@ const CF_APP_ID  = process.env.CASHFREE_APP_ID;
 const CF_SECRET  = process.env.CASHFREE_SECRET_KEY;
 
 const PLANS = {
-  pack_10:  {Label: "Starter",  amount:8, scans:10},
-  pack_25:  { label: "Popular",   amount: 20,   scans: 25  },
+  pack_10:   { label: "Starter",   amount: 8,   scans: 10 },
+  pack_25:   { label: "Popular",   amount: 20,  scans: 25 },
   pack_50:   { label: "Pro",       amount: 40,  scans: 50 },
-  unlimited: { label: "Unlimited", amount: 200,  scans: 999999 },
+  unlimited: { label: "Unlimited", amount: 200, scans: 999999 },
 };
-
-
-
-
-
 
 if (!process.env.MONGO_URI) throw new Error("❌ MONGO_URI missing in .env");
 
@@ -186,54 +178,54 @@ app.use(cors({ origin: "*", methods: ["GET", "POST"], allowedHeaders: ["Content-
 app.use(express.json());
 
 // SCAN quota middleware
-const checkScanQuota = async (req, res, next)=>{
-  try{
+const checkScanQuota = async (req, res, next) => {
+  try {
     const phone = req.body.phone || req.query.phone;
-    if(!phone) return res.status(401).json({
+    if (!phone) return res.status(401).json({
       error: "Login required", code: "AUTH_REQUIRED",
-      message : "Pehle apna Phone number enter karo",
+      message: "Pehle apna Phone number enter karo",
     });
-    const user = await User.findOne({phone});
-    if(!user) return res.status(404).json({
-      error:"User not found", code:"USER_NOT_FOUND",
-      message:"Phone number register nahi hai",
+    
+    const user = await User.findOne({ phone });
+    if (!user) return res.status(404).json({
+      error: "User not found", code: "USER_NOT_FOUND",
+      message: "Phone number register nahi hai",
     });
 
-    let scanCount=1;
-    if(req.files){
-      if(Array.isArray(req.files)) scanCount = req.files.length;
-      else if (req.files.cards)    scanCount=req.files.cards.length;
+    let scanCount = 1;
+    if (req.files) {
+      if (Array.isArray(req.files)) scanCount = req.files.length;
+      else if (req.files.cards) scanCount = req.files.cards.length;
+    } else if (req.file) {
+      scanCount = 1;
     }
 
-    const status=user.canScan(scanCount);
-    if(!status.allowed){
-      if(status.reason === "excited")
+    const status = user.canScan(scanCount);
+    if (!status.allowed) {
+      if (status.reason === "excited" || status.reason === "expired")
         return res.status(402).json({
-      error:"Premium expired", showPaywall:true,
-     message:"Aapka unlimited plan expire ho gya.",
-      });
+          error: "Premium expired", showPaywall: true,
+          message: "Aapka unlimited plan expire ho gya.",
+        });
       return res.status(402).json({
-        error :"Scan limit reached", showPaywall:true,
+        error: "Scan limit reached", showPaywall: true,
         message: status.reason === "exhausted"
-        ? "Aapka 5 free scans complete ho gaye. Premium lo!"
-        : "Aapke scans khatam ho gaye",
-      })
+          ? "Aapka 5 free scans complete ho gaye. Premium lo!"
+          : "Aapke scans khatam ho gaye",
+      });
     } 
-    req.scanUser=user;
-    req.scanCount=scanCount;
+    req.scanUser = user;
+    req.scanCount = scanCount;
     next();
-  }
-  catch(err) {res.status(500).json({error:err.message});}
+  } catch (err) { res.status(500).json({ error: err.message }); }
 };
 
 const deductAfterScan = async (req) => {
-  if(!req.scanUser) return;
+  if (!req.scanUser) return;
   req.scanUser.deductScan(req.scanCount || 1);
   await req.scanUser.save();
 };
 
-
-// Delay in Uploading PIC
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const RENDER_URL = process.env.RENDER_EXTERNAL_URL;
@@ -360,7 +352,6 @@ async function extractFromFrontBack(frontOCR, backOCR, retries = 3) {
 }
 
 // ── Clean helpers ─────────────────────────────────────────────────────────────
-// ── Clean helpers ─────────────────────────────────────────────────────────────
 const cleanEmail = (val) => {
   if (!val || typeof val !== "string") return val;
   const emails = val.split(",").map(e => e.trim()).filter(Boolean);
@@ -454,7 +445,7 @@ async function extractFromImages(frontBuf, frontMime, backBuf, backMime) {
 // ROUTES
 // ══════════════════════════════════════════════════════════════════════════════
 
-//register or Login
+// Register or Login
 app.post("/api/auth/register-or-login", async (req, res) => {
   try {
     const { phone, name } = req.body;
@@ -485,172 +476,170 @@ app.post("/api/auth/register-or-login", async (req, res) => {
   }
 });
 
-
-// api for user Status
-app.get("/api/user/status", async (req,res) =>{
-try{
-const {phone} =req.query;
-if(!phone) return res.status(400).json({error:"Phone Required"});
-const user = await User.findOne({phone});
-if(!user) return res.status(404).json({error:"User not Found"}); 
-const s=user.canScan();
-res.json({
-  success:true,
-  user:{
-    id:user._id,name:user.name,phone:user.phone,
-    plan:user.plan,isPremium:user.isPremium,
-    freeScansUsed:user.freeScansUsed,
-    freeScansLeft:Math.max(0, 5 - user.freeScansUsed),
-    scansRemaining:user.scansRemaining,
-    premiumExpiry:user.premiumExpiry,
-    canScan:s.allowed, scanReason:s.reason,
-  },
-});
-}
-catch(err) {res.status(500).json({err:err.message});}
+// Api for user Status
+app.get("/api/user/status", async (req, res) => {
+  try {
+    const { phone } = req.query;
+    if (!phone) return res.status(400).json({ error: "Phone Required" });
+    const user = await User.findOne({ phone });
+    if (!user) return res.status(404).json({ error: "User not Found" }); 
+    const s = user.canScan();
+    res.json({
+      success: true,
+      user: {
+        id: user._id, name: user.name, phone: user.phone,
+        plan: user.plan, isPremium: user.isPremium,
+        freeScansUsed: user.freeScansUsed,
+        freeScansLeft: Math.max(0, 5 - user.freeScansUsed),
+        scansRemaining: user.scansRemaining,
+        premiumExpiry: user.premiumExpiry,
+        canScan: s.allowed, scanReason: s.reason,
+      },
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-
-// Payment routes
-app.post("/api/payment/create-order", async (req,res) =>{
-  try{
-    const {email,plan}=req.body;
-    if(!PLANS[plan]) return res.status(400).json({error:"Invalid plan"});
-    const user = await User.findOne({email});
-    if(!user) return res.status(404).json({error: "User not found"});
+// Create Order (Phone validation fixed)
+app.post("/api/payment/create-order", async (req, res) => {
+  try {
+    const { phone, plan } = req.body; // ✅ Changed from email to phone
+    if (!phone) return res.status(400).json({ error: "Phone required" });
+    if (!PLANS[plan]) return res.status(400).json({ error: "Invalid plan" });
+    
+    const user = await User.findOne({ phone }); // ✅ Changed fallback search parameter
+    if (!user) return res.status(404).json({ error: "User not found" });
 
     const planInfo = PLANS[plan];
     const orderId = `order_${user._id}_${Date.now()}`;
 
-    const response = await fetch(`${CF_BASE}/pg/orders` ,{
-    method: "POST",
-    headers:{
-      "Content-Type": "application/json",
-      "x-api-version": CF_VERSION,
-      "x-client-id" : CF_APP_ID,
-      "x-client-secret" : CF_SECRET,
-    },
-
-    body :JSON.stringify({
-     order_id: orderId,
-     order_amount: planInfo.amount,
-     order_currency: "INR",
-     customer_details: {
-      customer_id: user._id.toString(),
-      customer_name : user.name,
-      customer_email:user.email,
-      customer_phone: req.body.phone || "9999999999",
-     },
-     order_meta:{
-      return_url:`${process.env.FRONTEND_URL || "http://localhost:3000"}/payment/status?order_id={order_id}`,
-      notify_url:`${process.env.BACKEND_URL || "http://localhost:5000"}/api/payment/webhook`,
-     },
-      order_note:`Card Scanner - ${planInfo.label}`,
-    }),
+    const response = await fetch(`${CF_BASE}/pg/orders`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-version": CF_VERSION,
+        "x-client-id" : CF_APP_ID,
+        "x-client-secret" : CF_SECRET,
+      },
+      body: JSON.stringify({
+        order_id: orderId,
+        order_amount: planInfo.amount,
+        order_currency: "INR",
+        customer_details: {
+          customer_id: user._id.toString(),
+          customer_name : user.name,
+          customer_email: user.email || "no-email@scanner.com",
+          customer_phone: user.phone, // ✅ Standardized from DB Object
+        },
+        order_meta: {
+          return_url: `${process.env.FRONTEND_URL || "http://localhost:3000"}/payment/status?order_id={order_id}`,
+          notify_url: `${process.env.BACKEND_URL || "http://localhost:5000"}/api/payment/webhook`,
+        },
+        order_note: `Card Scanner - ${planInfo.label}`,
+      }),
     });
 
     const data = await response.json();
-    if(!response.ok) throw new Error(data.message || "Order create failed");
-    user.payments.push({orderId,plan,amount:planInfo.amount, scans:planInfo.scans,status:"pending", cfOrderId: data.order_id });
+    if (!response.ok) throw new Error(data.message || "Order create failed");
+    
+    user.payments.push({ orderId, plan, amount: planInfo.amount, scans: planInfo.scans, status: "pending", cfOrderId: data.order_id });
     await user.save();
 
     res.json({
-      success:true,orderId,
-      paymentSessionId:data.payment_session_id,
-      amount:planInfo.amount, planInfo,
-      userName:user.name,userEmail:user.email,
+      success: true, orderId,
+      paymentSessionId: data.payment_session_id,
+      amount: planInfo.amount, planInfo,
+      userName: user.name, userEmail: user.email,
     });
-  }
-  catch(err) {res.status(500).json({error:err.message});}
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Payment Verify
-app.post("/api/payment/verify", async (req,res)=>{
-try{
-  const {orderId,email,plan} = req.body;
-  const response = await fetch(`${CF_BASE}/pg/orders/${orderId}`,{
-    method: "GET",
-    headers: {"x-api-version":CF_VERSION,"x-client-id":CF_APP_ID,"x-client-secret":CF_SECRET},
-  });
-  const orderData = await response.json();
-  if(!response.ok) throw new Error(orderData.message || "Order fetch failed");
-  if(orderData.order_status !== "PAID")
-    return res.status(400).json({error:"Payment not completed", status:orderData.order_status});
-   
-  const user = await User.findOne({email});
-  if(!user) return res.status(404).json({error:"User not found"});
-  const planInfo = PLANS[plan];
-  const payment = user.payments.find(p => p.orderId === orderId);
-  if(payment) {payment.status = "success"; payment.paidAt = new Date(); }
-  user.isPremium = true; user.plan=plan; user.premiumActivatedAt = new Date();
-  if(plan === "unlimited"){
- const expiry = new Date(); expiry.setDate(expiry.getDate()+30);
- user.premiumExpiry=expiry; user.scansRemaining = 999999;
-  }
-  else 
-  {
- user.scansRemaining = (user.scansRemaining || 0) + planInfo.scans;
- user.premiumExpiry=null;
-  }
-  await user.save();
-  res.json({sucess: true, message: `Payment successfull! ${planInfo.label} activated.`,
-    user:{name:user.name,
-       email:user.email,
-       plan:user.plan,
-       isPremium:user.isPremium,
-       scansRemaining:user.scansRemaining,
-      premiumExpiry:user.premiumExpiry,
-       freeScansLeft:0
+// Payment Verify (Phone validation fixed)
+app.post("/api/payment/verify", async (req, res) => {
+  try {
+    const { orderId, phone, plan } = req.body; // ✅ Query matching user phone
+    const response = await fetch(`${CF_BASE}/pg/orders/${orderId}`, {
+      method: "GET",
+      headers: { "x-api-version": CF_VERSION, "x-client-id": CF_APP_ID, "x-client-secret": CF_SECRET },
+    });
+    
+    const orderData = await response.json();
+    if (!response.ok) throw new Error(orderData.message || "Order fetch failed");
+    if (orderData.order_status !== "PAID")
+      return res.status(400).json({ error: "Payment not completed", status: orderData.order_status });
+       
+    const user = await User.findOne({ phone }); // ✅ DB fetch optimized
+    if (!user) return res.status(404).json({ error: "User not found" });
+    
+    const planInfo = PLANS[plan];
+    const payment = user.payments.find(p => p.orderId === orderId);
+    if (payment) { payment.status = "success"; payment.paidAt = new Date(); }
+    
+    user.isPremium = true; user.plan = plan; user.premiumActivatedAt = new Date();
+    if (plan === "unlimited") {
+      const expiry = new Date(); expiry.setDate(expiry.getDate() + 30);
+      user.premiumExpiry = expiry; user.scansRemaining = 999999;
+    } else {
+      user.scansRemaining = (user.scansRemaining || 0) + planInfo.scans;
+      user.premiumExpiry = null;
     }
-  });
-}
-catch(err){
-  res.status(500).json({error:err.message});
-}
+    
+    await user.save();
+    res.json({
+      success: true, message: `Payment successful! ${planInfo.label} activated.`,
+      user: {
+        name: user.name,
+        phone: user.phone,
+        plan: user.plan,
+        isPremium: user.isPremium,
+        scansRemaining: user.scansRemaining,
+        premiumExpiry: user.premiumExpiry,
+        freeScansLeft: 0
+      }
+    });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-
-//payment webhook
-app.post("/api/payment/webhook", async (req,res) => {
-  // webhook route mein user/payment fetch hi nahi kiya
-// Yeh add karo:
-try{
-const orderId = req.body.data?.order?.order_id;
-const user = await User.findOne({ "payments.orderId": orderId });
-if (!user) return res.status(404).json({ error: "User not found" });
-const payment = user.payments.find(p => p.orderId === orderId);
-if (!payment) return res.status(404).json({ error: "Payment not found" });
-const signature = req.headers["x-webhook-signature"];
-const timestamp=req.headers["x-webhook-timestamp"];
-const expected = crypto.createHmac("sha256",CF_SECRET).update(timestamp + JSON.stringify(req.body)).digest("base64");
-if(expected !== signature) return res.status(400).json({error: "Invalid signature"});
-if(req.body.type !== "PAYMENT_SUCCESS_WEBHOOK") return res.json({received:true});
-const planInfo = PLANS[payment.plan];
-payment.status = "success"; payment.paidAt = new Date();
-user.isPremium = true; user.plan = payment.plan; user.premiumActivatedAt = new Date();
-if(payment.plan === "unlimited"){
-  const expiry = new Date(); expiry.setDate(expiry.getDate()+30);
-  user.premiumExpiry = expiry; user.scansRemaining = 99999;
-}
-else {
-  user.scansRemaining = (user.scansRemaining || 0) + planInfo.scans;
-}
-await user.save();
-console.log(`✅ Webhook: ${user.email} — ${payment.plan}`);
-res.json({received:true});
-}
-catch(err)
-{res.status(500).json({error:err.message});}
-})
-
+// Payment Webhook (Unlimited value fixed)
+app.post("/api/payment/webhook", async (req, res) => {
+  try {
+    const orderId = req.body.data?.order?.order_id;
+    const user = await User.findOne({ "payments.orderId": orderId });
+    if (!user) return res.status(404).json({ error: "User not found" });
+    
+    const payment = user.payments.find(p => p.orderId === orderId);
+    if (!payment) return res.status(404).json({ error: "Payment not found" });
+    
+    const signature = req.headers["x-webhook-signature"];
+    const timestamp = req.headers["x-webhook-timestamp"];
+    const expected = crypto.createHmac("sha256", CF_SECRET).update(timestamp + JSON.stringify(req.body)).digest("base64");
+    if (expected !== signature) return res.status(400).json({ error: "Invalid signature" });
+    if (req.body.type !== "PAYMENT_SUCCESS_WEBHOOK") return res.json({ received: true });
+    
+    const planInfo = PLANS[payment.plan];
+    payment.status = "success"; payment.paidAt = new Date();
+    user.isPremium = true; user.plan = payment.plan; user.premiumActivatedAt = new Date();
+    
+    if (payment.plan === "unlimited") {
+      const expiry = new Date(); expiry.setDate(expiry.getDate() + 30);
+      user.premiumExpiry = expiry; user.scansRemaining = 999999; // ✅ Scaled value logic typo fixed
+    } else {
+      user.scansRemaining = (user.scansRemaining || 0) + planInfo.scans;
+    }
+    
+    await user.save();
+    console.log(`✅ Webhook verified: ${user.phone} — ${payment.plan}`);
+    res.json({ received: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 // ── POST /api/extract ─────────────────────────────────────────────────────────
-app.post("/api/extract", upload.single("card"),checkScanQuota, async (req, res) => {
+app.post("/api/extract", upload.single("card"), checkScanQuota, async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: "Koi image upload nahi hui" });
     const language = req.body.language || "auto";
     const parsed = await extractFromImage(req.file.buffer, req.file.mimetype, language);
     await deductAfterScan(req);
+    
     if (Array.isArray(parsed)) {
       const saved = await Promise.all(parsed.map(data => saveCard(data).catch(() => null)));
       res.json({
@@ -674,13 +663,13 @@ app.post("/api/extract", upload.single("card"),checkScanQuota, async (req, res) 
 
 // ── POST /api/extract-frontback ───────────────────────────────────────────────
 app.post("/api/extract-frontback",
-  upload.fields([{ name: "front", maxCount: 1 }, { name: "back", maxCount: 1 }]),checkScanQuota,
+  upload.fields([{ name: "front", maxCount: 1 }, { name: "back", maxCount: 1 }]), checkScanQuota,
   async (req, res) => {
     try {
       const frontFile = req.files?.front?.[0];
       const backFile  = req.files?.back?.[0];
-      if (!frontFile) return res.status(400).json({ error: "Front image nahi hui" });
-      if (!backFile)  return res.status(400).json({ error: "Back image nahi hui" });
+      if (!frontFile) return res.status(400).json({ error: "Front image nahi mili" });
+      if (!backFile)  return res.status(400).json({ error: "Back image nahi mili" });
 
       const data  = await extractFromImages(frontFile.buffer, frontFile.mimetype, backFile.buffer, backFile.mimetype);
       await deductAfterScan(req);
@@ -694,10 +683,10 @@ app.post("/api/extract-frontback",
   }
 );
 
-// ── POST /api/extract-bulk ────────────────────────────────────────────────────
-app.post("/api/extract-bulk", upload.array("cards", 50),checkScanQuota, async (req, res) => {
+// ── POST /api/extract-bulk (Await integration added) ─────────────────────────
+app.post("/api/extract-bulk", upload.array("cards", 50), checkScanQuota, async (req, res) => {
   try {
-    if (!req.files?.length) return res.status(400).json({ error: "Koi image nahi hui" });
+    if (!req.files?.length) return res.status(400).json({ error: "Koi image nahi mili" });
 
     const language = req.body.language || "auto";
     const { batchSize, batchDelay } = BATCH_CONFIG[language] || BATCH_CONFIG.auto;
@@ -717,9 +706,7 @@ app.post("/api/extract-bulk", upload.array("cards", 50),checkScanQuota, async (r
             const dataArr = Array.isArray(parsed) ? parsed : [parsed];
             await Promise.all(dataArr.map(d => saveCard(d).catch(() => null)));
             results[idx] = dataArr.map((data, k) => ({
-              filename: Array.isArray(parsed)
-                ? `${file.originalname} — Card ${k + 1}`
-                : file.originalname,
+              filename: Array.isArray(parsed) ? `${file.originalname} — Card ${k + 1}` : file.originalname,
               status: "success",
               data,
             }));
@@ -733,7 +720,8 @@ app.post("/api/extract-bulk", upload.array("cards", 50),checkScanQuota, async (r
       res.write(" ");
       if (i + batchSize < req.files.length) await delay(batchDelay);
     }
-    await deductAfterScan(req);
+    
+    await deductAfterScan(req); // ✅ Await added inside async chunk controller
     res.end(JSON.stringify({ success: true, results: results.flat() }));
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -748,4 +736,4 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", db: mongoose.connection.readyState === 1 ? "connected" : "disconnected" });
 });
 
-app.listen(PORT, () => console.log(`🚀 Server: http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Server running on: http://localhost:${PORT}`));
