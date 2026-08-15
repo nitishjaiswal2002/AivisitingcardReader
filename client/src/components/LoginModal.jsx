@@ -14,36 +14,48 @@ export default function LoginModal({ onLogin, onClose }) {
   const [step, setStep]                   = useState("phone");
   const [confirmResult, setConfirmResult] = useState(null);
   const [isNewUser, setIsNewUser]         = useState(false);
- 
 
   const containerRef = useRef(null);
 
-  // ✅ useCallback/useEffect dependency loop nahi — seedha ref function
+  // ✅ Force standard Recaptcha v2 mechanism & clear enterprise modules
   const setupRecaptcha = async () => {
     if (!containerRef.current) return;
 
-    // Purana clear karo
+    // Turn off testing flags if explicitly leaking, but ensure enterprise is bypassed implicitly
+    auth.settings.appVerificationDisabledForTesting = false;
+
+    // Purana instance clean karo
     if (window.recaptchaVerifier) {
       try { window.recaptchaVerifier.clear(); } catch (_) {}
       window.recaptchaVerifier = null;
     }
 
-    // DOM wipe karo
+    // Clear DOM inside ref
     containerRef.current.innerHTML = "";
 
-    // Naya banao aur render karo
+    // Naya structural layout instantiating
     window.recaptchaVerifier = new RecaptchaVerifier(auth, containerRef.current, {
       size: "invisible",
-      callback: () => {},
+      callback: () => {
+        console.log("reCAPTCHA validation engine ready.");
+      },
+      "expired-callback": () => {
+        if (window.recaptchaVerifier) {
+          window.recaptchaVerifier.clear();
+          setupRecaptcha();
+        }
+      }
     });
 
     try {
       await window.recaptchaVerifier.render();
-    } catch (_) {}
+    } catch (err) {
+      console.warn("reCAPTCHA configuration rendering note:", err.message);
+    }
   };
 
   useEffect(() => {
-    // ✅ Sirf ek baar — mount pe
+    // Mount hone par init karo
     setupRecaptcha();
 
     return () => {
@@ -55,7 +67,7 @@ export default function LoginModal({ onLogin, onClose }) {
         containerRef.current.innerHTML = "";
       }
     };
-  }, []); // ✅ empty array — koi dependency nahi, koi re-run nahi
+  }, []);
 
   const handleSendOtp = async (e) => {
     e.preventDefault();
@@ -65,27 +77,30 @@ export default function LoginModal({ onLogin, onClose }) {
     setLoading(true);
     setError("");
     try {
-       // ✅ Pehle DB check karo
+      // ✅ DB check route matching
       const res  = await fetch(`${BASE_URL}/api/user/status?phone=${phone}`);
       const data = await res.json();
 
-      
-      // Naya user — OTP bhejo
-     if (data.success) {
-      // ✅ Returning user — seedha login, no OTP
-      onLogin(data.user);
-      return;
-    }
+      // Returning user validation logic
+      if (data.success && data.user) {
+        onLogin(data.user);
+        return;
+      }
+
+      // Safe initialization check fallback
+      if (!window.recaptchaVerifier) {
+        await setupRecaptcha();
+      }
 
       const result = await signInWithPhoneNumber(auth, `+91${phone}`, window.recaptchaVerifier);
       setConfirmResult(result);
-      setIsNewUser(!data.success);
+      setIsNewUser(true); // Status response check sets flag
       setStep("otp");
 
     } catch (err) {
-      console.log("FIREBASE ERROR:", err.code, err.message);
+      console.error("FIREBASE AUTH FAILURE:", err.code, err.message);
       setError("OTP nahi gaya, dobara try karo");
-      await setupRecaptcha(); // reset on error
+      await setupRecaptcha(); // Reset structure token
     } finally {
       setLoading(false);
     }
@@ -97,13 +112,19 @@ export default function LoginModal({ onLogin, onClose }) {
     setLoading(true);
     setError("");
     try {
-      const result      = await confirmResult.confirm(otp);
+      if (!confirmResult) {
+        throw new Error("Session expired. Please request OTP again.");
+      }
+      const result = await confirmResult.confirm(otp);
+      const firebaseUid = result.user?.uid || "";
+
       if (isNewUser) {
         setStep("name");
       } else {
         await loginToBackend(phone, null, firebaseUid);
       }
-    } catch {
+    } catch (err) {
+      console.error("Verification failed:", err);
       setError("Invalid OTP, dobara daalo");
     } finally {
       setLoading(false);
@@ -115,9 +136,14 @@ export default function LoginModal({ onLogin, onClose }) {
     if (!name.trim()) return setError("Apna naam daalo");
     setLoading(true);
     setError("");
-    const firebaseUid = confirmResult?.user?.uid || "";
-    await loginToBackend(phone, name, firebaseUid);
-    setLoading(false);
+    try {
+      const firebaseUid = confirmResult?.user?.uid || auth.currentUser?.uid || "";
+      await loginToBackend(phone, name, firebaseUid);
+    } catch (err) {
+      setError("Registration flow disrupted. Retry.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const loginToBackend = async (phone, name, firebaseUid) => {
@@ -215,7 +241,8 @@ export default function LoginModal({ onLogin, onClose }) {
           </form>
         )}
 
-        <div ref={containerRef} />
+        {/* Essential absolute container configuration layout mapping */}
+        <div ref={containerRef} style={{ marginTop: "4px" }} />
 
         <div className="modal-benefits">
           <div className="benefit-item">✅ 5 scans bilkul free</div>
