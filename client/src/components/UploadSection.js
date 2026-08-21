@@ -31,6 +31,34 @@ const compressImage = (file) => {
   });
 };
 
+// ── Save a captured photo to the device gallery ───────────────────────────────
+// Tries the native share sheet first (gives a real "Save Image" option on
+// Android/iOS). Falls back to a download-trigger if Web Share isn't available.
+// Must be called from a genuine user tap (button onClick) for the share sheet
+// to work reliably.
+const saveToGallery = async (file) => {
+  if (!file) return false;
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file] });
+      return true;
+    }
+  } catch (err) {
+    if (err.name === "AbortError") return false; // user cancelled share sheet
+    console.warn("Share API failed, falling back to download:", err);
+  }
+
+  const url = URL.createObjectURL(file);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = file.name || "card-scan.jpg";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  return true;
+};
+
 function UploadSection({ 
   mode, 
   cardSide, 
@@ -53,8 +81,8 @@ function UploadSection({
 
   const [frontFile, setFrontFile]       = useState(null);
   const [backFile, setBackFile]         = useState(null);
-  const [frontPreview, setFrontPreview] = useState(null);
-  const [backPreview, setBackPreview]   = useState(null);
+  const [frontPreview, setFrontPreview] = useState(null); // { name, src, fromCamera }
+  const [backPreview, setBackPreview]   = useState(null); // { name, src, fromCamera }
   const [bulkItems, setBulkItems]       = useState([]);
 
   const lastClickRef   = useRef(0);
@@ -81,7 +109,7 @@ function UploadSection({
     setError("");
   }, [mode, cardSide, bulkCardSide, setError]);
 
-  const handleFiles = async (selectedFiles) => {
+  const handleFiles = async (selectedFiles, fromCamera = false) => {
     const fileArray = Array.from(selectedFiles);
     if (mode === "single" && fileArray.length > 1) {
       setError("Single mode mein ek hi card upload karo");
@@ -95,14 +123,14 @@ function UploadSection({
     const previewPromises = compressed.map((file) =>
       new Promise((resolve) => {
         const reader = new FileReader();
-        reader.onload = (e) => resolve({ name: file.name, src: e.target.result });
+        reader.onload = (e) => resolve({ name: file.name, src: e.target.result, fromCamera });
         reader.readAsDataURL(file);
       })
     );
     Promise.all(previewPromises).then(setPreviews);
   };
 
-  const handleFrontFile = async (selectedFiles) => {
+  const handleFrontFile = async (selectedFiles, fromCamera = false) => {
     const file = Array.from(selectedFiles)[0];
     if (!file) return;
     setError("");
@@ -111,11 +139,11 @@ function UploadSection({
     setFrontFile(compressed);
     setCompressing(false);
     const reader = new FileReader();
-    reader.onload = (e) => setFrontPreview({ name: compressed.name, src: e.target.result });
+    reader.onload = (e) => setFrontPreview({ name: compressed.name, src: e.target.result, fromCamera });
     reader.readAsDataURL(compressed);
   };
 
-  const handleBackFile = async (selectedFiles) => {
+  const handleBackFile = async (selectedFiles, fromCamera = false) => {
     const file = Array.from(selectedFiles)[0];
     if (!file) return;
     setError("");
@@ -124,7 +152,7 @@ function UploadSection({
     setBackFile(compressed);
     setCompressing(false);
     const reader = new FileReader();
-    reader.onload = (e) => setBackPreview({ name: compressed.name, src: e.target.result });
+    reader.onload = (e) => setBackPreview({ name: compressed.name, src: e.target.result, fromCamera });
     reader.readAsDataURL(compressed);
   };
 
@@ -419,6 +447,15 @@ function UploadSection({
                 <img src={frontPreview.src} alt="front" className="preview-img" />
                 <div className="preview-name">{frontPreview.name}</div>
                 <button className="preview-remove" onClick={() => { setFrontFile(null); setFrontPreview(null); }}>✕</button>
+                {frontPreview.fromCamera && (
+                  <button
+                    className="upload-opt-btn"
+                    style={{ marginTop: "6px", width: "100%" }}
+                    onClick={() => saveToGallery(frontFile)}
+                  >
+                    💾 Save to Gallery
+                  </button>
+                )}
               </div>
             ) : (
               <div className="side-placeholder">No image selected</div>
@@ -430,7 +467,7 @@ function UploadSection({
               )}
             </div>
             <input ref={frontFileRef}   type="file" accept="image/*" style={{ display:"none" }} onChange={(e) => handleFrontFile(e.target.files)} />
-            <input ref={frontCameraRef} type="file" accept="image/*" capture="environment" style={{ display:"none" }} onChange={(e) => handleFrontFile(e.target.files)} />
+            <input ref={frontCameraRef} type="file" accept="image/*" capture="environment" style={{ display:"none" }} onChange={(e) => handleFrontFile(e.target.files, true)} />
           </div>
 
           <div className="side-upload-box">
@@ -440,6 +477,15 @@ function UploadSection({
                 <img src={backPreview.src} alt="back" className="preview-img" />
                 <div className="preview-name">{backPreview.name}</div>
                 <button className="preview-remove" onClick={() => { setBackFile(null); setBackPreview(null); }}>✕</button>
+                {backPreview.fromCamera && (
+                  <button
+                    className="upload-opt-btn"
+                    style={{ marginTop: "6px", width: "100%" }}
+                    onClick={() => saveToGallery(backFile)}
+                  >
+                    💾 Save to Gallery
+                  </button>
+                )}
               </div>
             ) : (
               <div className="side-placeholder">No image selected</div>
@@ -451,7 +497,7 @@ function UploadSection({
               )}
             </div>
             <input ref={backFileRef}   type="file" accept="image/*" style={{ display:"none" }} onChange={(e) => handleBackFile(e.target.files)} />
-            <input ref={backCameraRef} type="file" accept="image/*" capture="environment" style={{ display:"none" }} onChange={(e) => handleBackFile(e.target.files)} />
+            <input ref={backCameraRef} type="file" accept="image/*" capture="environment" style={{ display:"none" }} onChange={(e) => handleBackFile(e.target.files, true)} />
           </div>
         </div>
       )}
@@ -514,7 +560,6 @@ function UploadSection({
                 {unpaired.length > 0 && (
                   <div className="pair-summary-row warn">
                     <span>⚠️ Unpaired fronts:</span>
-                    {/* ⚡ Fixed broken strong tag bracket here */}
                     <strong>{unpaired.length} (sirf front se extract hoga)</strong>
                   </div>
                 )}
@@ -553,7 +598,7 @@ function UploadSection({
             <p className="drop-sub">JPG, PNG, WEBP supported</p>
             <p className="drop-limit">{mode === "single" ? "1 card at a time" : "Max 50 cards at once"}</p>
             <input ref={fileInputRef}   type="file" accept="image/*" multiple={mode === "bulk"} style={{ display:"none" }} onChange={(e) => handleFiles(e.target.files)} />
-            <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" style={{ display:"none" }} onChange={(e) => handleFiles(e.target.files)} />
+            <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" style={{ display:"none" }} onChange={(e) => handleFiles(e.target.files, true)} />
           </div>
 
           {mode === "single" && !compressing && (
@@ -578,6 +623,15 @@ function UploadSection({
                 <img src={p.src} alt={p.name} className="preview-img" />
                 <div className="preview-name">{p.name}</div>
                 <button className="preview-remove" onClick={(e) => { e.stopPropagation(); removeFile(i); }}>✕</button>
+                {p.fromCamera && (
+                  <button
+                    className="upload-opt-btn"
+                    style={{ marginTop: "6px", width: "100%" }}
+                    onClick={(e) => { e.stopPropagation(); saveToGallery(files[i]); }}
+                  >
+                    💾 Save to Gallery
+                  </button>
+                )}
               </div>
             ))}
           </div>
