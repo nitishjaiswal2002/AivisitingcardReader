@@ -10,7 +10,8 @@ const userSchema = new mongoose.Schema({
   scansRemaining:     { type: Number, default: 0 },
   premiumExpiry:      { type: Date, default: null },
   premiumActivatedAt: { type: Date, default: null },       // ✅ date→Date, premuim→premium
-  phone: { type: String, unique: true, sparse: true },
+  phone: { type: String, unique: true, sparse: true,required:false },
+  email: {type: String, unique:true, sparse:true,required:true},
   payments: [{
     orderId:   String,
     cfOrderId: String,

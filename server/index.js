@@ -4,10 +4,24 @@ import multer from "multer";
 import dotenv from "dotenv";
 import mongoose from "mongoose";
 import { saveCard, getAllCards } from "./Controller/cardController.js";
-import { User } from "./Models/User.js"; 
+import { User } from "./Models/User.js";
 import crypto from "crypto";
+import { initializeApp, cert } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
 
 dotenv.config();
+
+// ── Firebase Admin (for verifying Google Sign-In tokens) ─────────────────────
+// Stored as base64 in .env to avoid JSON-escaping/newline issues that
+// plain .env files (especially on Windows) have with the private_key field.
+// Get the raw service-account JSON from Firebase Console → Project Settings
+// → Service Accounts → Generate new private key, then base64-encode it:
+//   node -e "console.log(Buffer.from(require('fs').readFileSync('./serviceAccountKey.json')).toString('base64'))"
+if (!process.env.FIREBASE_SERVICE_ACCOUNT_BASE64) throw new Error("❌ FIREBASE_SERVICE_ACCOUNT_BASE64 missing in .env");
+const serviceAccountJson = Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, "base64").toString("utf-8");
+initializeApp({
+  credential: cert(JSON.parse(serviceAccountJson)),
+});
 
 const CF_BASE    = process.env.CF_BASE_URL || "https://sandbox.cashfree.com";
 const CF_VERSION = "2023-08-01";
@@ -177,19 +191,32 @@ const upload = multer({
 app.use(cors({ origin: "*", methods: ["GET", "POST"], allowedHeaders: ["Content-Type"] }));
 app.use(express.json());
 
+// ── Identify user by whichever identifier is present ─────────────────────────
+// Frontend now sends `email` (Google Sign-In). `phone` is kept as a fallback
+// for any user records created before the Google-auth switch, and for the
+// optional phone-verification-at-payment flow.
+const getUserFilter = (source) => {
+  const email = source.email;
+  const phone = source.phone;
+  if (email) return { email };
+  if (phone) return { phone };
+  return null;
+};
+
 // SCAN quota middleware
 const checkScanQuota = async (req, res, next) => {
   try {
-    const phone = req.body.phone || req.query.phone;
-    if (!phone) return res.status(401).json({
+    const source = { ...req.query, ...req.body };
+    const filter = getUserFilter(source);
+    if (!filter) return res.status(401).json({
       error: "Login required", code: "AUTH_REQUIRED",
-      message: "Pehle apna Phone number enter karo",
+      message: "Pehle login karo",
     });
-    
-    const user = await User.findOne({ phone });
+
+    const user = await User.findOne(filter);
     if (!user) return res.status(404).json({
       error: "User not found", code: "USER_NOT_FOUND",
-      message: "Phone number register nahi hai",
+      message: "Account nahi mila, dobara login karo",
     });
 
     let scanCount = 1;
@@ -213,7 +240,7 @@ const checkScanQuota = async (req, res, next) => {
           ? "Aapka 5 free scans complete ho gaye. Premium lo!"
           : "Aapke scans khatam ho gaye",
       });
-    } 
+    }
     req.scanUser = user;
     req.scanCount = scanCount;
     next();
@@ -391,8 +418,8 @@ const cleanAddress = (val) => {
 
 // ── Blank fields remover ──────────────────────────────────────────────────────
 const BLANK_VALUES = new Set([
-  "", "N/A", "n/a", "NA", "na", "-", "--", "none", "None", 
-  "NONE", "null", "NULL", "undefined", "not available", 
+  "", "N/A", "n/a", "NA", "na", "-", "--", "none", "None",
+  "NONE", "null", "NULL", "undefined", "not available",
   "Not Available", "N.A.", "n.a."
 ]);
 
@@ -445,24 +472,41 @@ async function extractFromImages(frontBuf, frontMime, backBuf, backMime) {
 // ROUTES
 // ══════════════════════════════════════════════════════════════════════════════
 
-// Register or Login
-app.post("/api/auth/register-or-login", async (req, res) => {
+// ── POST /api/auth/google-login ───────────────────────────────────────────────
+// Primary auth route now. Frontend sends the Firebase ID token after
+// signInWithPopup(GoogleAuthProvider); we verify it server-side.
+app.post("/api/auth/google-login", async (req, res) => {
   try {
-    const { phone, name } = req.body;
-    const firebaseUid = req.body.firebaseUid || null;
-    if (!phone) return res.status(400).json({ error: "Phone required" });
+    const { idToken } = req.body;
+    if (!idToken) return res.status(400).json({ error: "Token missing" });
 
-    let user = await User.findOne({ phone });
+    // Critical step — verifies the token was actually issued by Google/
+    // Firebase and hasn't been tampered with. A forged token throws here.
+    const decoded = await getAuth().verifyIdToken(idToken);
+
+    const { email, name, uid, picture } = decoded;
+    if (!email) return res.status(400).json({ error: "Email not available from Google account" });
+
+    let user = await User.findOne({ email });
     if (!user) {
-      if (!name) return res.status(400).json({ error: "Name required" });
-      user = await User.create({ phone, name, firebaseUid });
+      try {
+        user = await User.create({
+          email,
+          name: name || email.split("@")[0],
+          googleUid: uid,
+          picture: picture || null,
+        });
+      } catch (err) {
+        if (err.code === 11000) user = await User.findOne({ email }); // race guard
+        else throw err;
+      }
     }
 
     const s = user.canScan();
     res.json({
       success: true,
       user: {
-        id: user._id, name: user.name, phone: user.phone,
+        id: user._id, name: user.name, email: user.email, phone: user.phone || null,
         plan: user.plan, isPremium: user.isPremium,
         freeScansUsed: user.freeScansUsed,
         freeScansLeft: Math.max(0, 5 - user.freeScansUsed),
@@ -472,22 +516,24 @@ app.post("/api/auth/register-or-login", async (req, res) => {
       },
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("google-login error:", err.message);
+    res.status(401).json({ error: "Invalid Google login, dobara try karo" });
   }
 });
 
-// Api for user Status
+// ── GET /api/user/status ──────────────────────────────────────────────────────
+// Accepts either ?email= or ?phone=
 app.get("/api/user/status", async (req, res) => {
   try {
-    const { phone } = req.query;
-    if (!phone) return res.status(400).json({ error: "Phone Required" });
-    const user = await User.findOne({ phone });
-    if (!user) return res.status(404).json({ error: "User not Found" }); 
+    const filter = getUserFilter(req.query);
+    if (!filter) return res.status(400).json({ error: "Email ya phone required" });
+    const user = await User.findOne(filter);
+    if (!user) return res.status(404).json({ error: "User not Found" });
     const s = user.canScan();
     res.json({
       success: true,
       user: {
-        id: user._id, name: user.name, phone: user.phone,
+        id: user._id, name: user.name, email: user.email || null, phone: user.phone || null,
         plan: user.plan, isPremium: user.isPremium,
         freeScansUsed: user.freeScansUsed,
         freeScansLeft: Math.max(0, 5 - user.freeScansUsed),
@@ -499,18 +545,39 @@ app.get("/api/user/status", async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Create Order (Phone validation fixed)
+// ── POST /api/user/add-phone ──────────────────────────────────────────────────
+// Optional: collect + verify phone at premium-purchase time (Cashfree wants
+// a phone number). Call this after your OTP-verify step, before create-order,
+// if the logged-in (Google) user doesn't have a phone on file yet.
+app.post("/api/user/add-phone", async (req, res) => {
+  try {
+    const { email, phone } = req.body;
+    if (!email || !phone) return res.status(400).json({ error: "Email aur phone dono required" });
+    const user = await User.findOneAndUpdate({ email }, { phone }, { new: true });
+    if (!user) return res.status(404).json({ error: "User not found" });
+    res.json({ success: true, user: { id: user._id, email: user.email, phone: user.phone } });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── POST /api/payment/create-order ────────────────────────────────────────────
 app.post("/api/payment/create-order", async (req, res) => {
   try {
-    const { phone, plan } = req.body; // ✅ Changed from email to phone
-    if (!phone) return res.status(400).json({ error: "Phone required" });
+    const { email, phone, plan } = req.body;
+    const filter = getUserFilter({ email, phone });
+    if (!filter) return res.status(400).json({ error: "Email ya phone required" });
     if (!PLANS[plan]) return res.status(400).json({ error: "Invalid plan" });
-    
-    const user = await User.findOne({ phone }); // ✅ Changed fallback search parameter
+
+    const user = await User.findOne(filter);
     if (!user) return res.status(404).json({ error: "User not found" });
 
     const planInfo = PLANS[plan];
     const orderId = `order_${user._id}_${Date.now()}`;
+
+    // Cashfree needs a phone number on the order. If the user only has a
+    // Google account (no phone yet), fall back to a placeholder — but for
+    // real payment compliance you should call /api/user/add-phone first
+    // and collect a real number before checkout.
+    const customerPhone = user.phone || "9999999999";
 
     const response = await fetch(`${CF_BASE}/pg/orders`, {
       method: "POST",
@@ -527,7 +594,8 @@ app.post("/api/payment/create-order", async (req, res) => {
         customer_details: {
           customer_id: user._id.toString(),
           customer_name : user.name,
-          customer_phone: user.phone, // ✅ Standardized from DB Object
+          customer_phone: customerPhone,
+          customer_email: user.email || undefined,
         },
         order_meta: {
           return_url: `${process.env.FRONTEND_URL || "http://localhost:3000"}/payment/status?order_id={order_id}`,
@@ -539,7 +607,7 @@ app.post("/api/payment/create-order", async (req, res) => {
 
     const data = await response.json();
     if (!response.ok) throw new Error(data.message || "Order create failed");
-    
+
     user.payments.push({ orderId, plan, amount: planInfo.amount, scans: planInfo.scans, status: "pending", cfOrderId: data.order_id });
     await user.save();
 
@@ -552,27 +620,29 @@ app.post("/api/payment/create-order", async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Payment Verify (Phone validation fixed)
+// ── POST /api/payment/verify ──────────────────────────────────────────────────
 app.post("/api/payment/verify", async (req, res) => {
   try {
-    const { orderId, phone, plan } = req.body; // ✅ Query matching user phone
+    const { orderId, email, phone, plan } = req.body;
     const response = await fetch(`${CF_BASE}/pg/orders/${orderId}`, {
       method: "GET",
       headers: { "x-api-version": CF_VERSION, "x-client-id": CF_APP_ID, "x-client-secret": CF_SECRET },
     });
-    
+
     const orderData = await response.json();
     if (!response.ok) throw new Error(orderData.message || "Order fetch failed");
     if (orderData.order_status !== "PAID")
       return res.status(400).json({ error: "Payment not completed", status: orderData.order_status });
-       
-    const user = await User.findOne({ phone }); // ✅ DB fetch optimized
+
+    const filter = getUserFilter({ email, phone });
+    if (!filter) return res.status(400).json({ error: "Email ya phone required" });
+    const user = await User.findOne(filter);
     if (!user) return res.status(404).json({ error: "User not found" });
-    
+
     const planInfo = PLANS[plan];
     const payment = user.payments.find(p => p.orderId === orderId);
     if (payment) { payment.status = "success"; payment.paidAt = new Date(); }
-    
+
     user.isPremium = true; user.plan = plan; user.premiumActivatedAt = new Date();
     if (plan === "unlimited") {
       const expiry = new Date(); expiry.setDate(expiry.getDate() + 30);
@@ -581,13 +651,14 @@ app.post("/api/payment/verify", async (req, res) => {
       user.scansRemaining = (user.scansRemaining || 0) + planInfo.scans;
       user.premiumExpiry = null;
     }
-    
+
     await user.save();
     res.json({
       success: true, message: `Payment successful! ${planInfo.label} activated.`,
       user: {
         name: user.name,
-        phone: user.phone,
+        email: user.email || null,
+        phone: user.phone || null,
         plan: user.plan,
         isPremium: user.isPremium,
         scansRemaining: user.scansRemaining,
@@ -598,35 +669,35 @@ app.post("/api/payment/verify", async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Payment Webhook (Unlimited value fixed)
+// ── POST /api/payment/webhook ─────────────────────────────────────────────────
 app.post("/api/payment/webhook", async (req, res) => {
   try {
     const orderId = req.body.data?.order?.order_id;
     const user = await User.findOne({ "payments.orderId": orderId });
     if (!user) return res.status(404).json({ error: "User not found" });
-    
+
     const payment = user.payments.find(p => p.orderId === orderId);
     if (!payment) return res.status(404).json({ error: "Payment not found" });
-    
+
     const signature = req.headers["x-webhook-signature"];
     const timestamp = req.headers["x-webhook-timestamp"];
     const expected = crypto.createHmac("sha256", CF_SECRET).update(timestamp + JSON.stringify(req.body)).digest("base64");
     if (expected !== signature) return res.status(400).json({ error: "Invalid signature" });
     if (req.body.type !== "PAYMENT_SUCCESS_WEBHOOK") return res.json({ received: true });
-    
+
     const planInfo = PLANS[payment.plan];
     payment.status = "success"; payment.paidAt = new Date();
     user.isPremium = true; user.plan = payment.plan; user.premiumActivatedAt = new Date();
-    
+
     if (payment.plan === "unlimited") {
       const expiry = new Date(); expiry.setDate(expiry.getDate() + 30);
-      user.premiumExpiry = expiry; user.scansRemaining = 999999; // ✅ Scaled value logic typo fixed
+      user.premiumExpiry = expiry; user.scansRemaining = 999999;
     } else {
       user.scansRemaining = (user.scansRemaining || 0) + planInfo.scans;
     }
-    
+
     await user.save();
-    console.log(`✅ Webhook verified: ${user.phone} — ${payment.plan}`);
+    console.log(`✅ Webhook verified: ${user.email || user.phone} — ${payment.plan}`);
     res.json({ received: true });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
@@ -638,7 +709,7 @@ app.post("/api/extract", upload.single("card"), checkScanQuota, async (req, res)
     const language = req.body.language || "auto";
     const parsed = await extractFromImage(req.file.buffer, req.file.mimetype, language);
     await deductAfterScan(req);
-    
+
     if (Array.isArray(parsed)) {
       const saved = await Promise.all(parsed.map(data => saveCard(data).catch(() => null)));
       res.json({
@@ -682,7 +753,7 @@ app.post("/api/extract-frontback",
   }
 );
 
-// ── POST /api/extract-bulk (Await integration added) ─────────────────────────
+// ── POST /api/extract-bulk ────────────────────────────────────────────────────
 app.post("/api/extract-bulk", upload.array("cards", 50), checkScanQuota, async (req, res) => {
   try {
     if (!req.files?.length) return res.status(400).json({ error: "Koi image nahi mili" });
@@ -719,8 +790,8 @@ app.post("/api/extract-bulk", upload.array("cards", 50), checkScanQuota, async (
       res.write(" ");
       if (i + batchSize < req.files.length) await delay(batchDelay);
     }
-    
-    await deductAfterScan(req); // ✅ Await added inside async chunk controller
+
+    await deductAfterScan(req);
     res.end(JSON.stringify({ success: true, results: results.flat() }));
   } catch (err) {
     res.status(500).json({ error: err.message });
